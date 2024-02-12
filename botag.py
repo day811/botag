@@ -9,6 +9,7 @@ import argparse
 
 
 class Settings(configparser.ConfigParser):
+    """settings class"""
 
     def __init__(self):
         super().__init__()
