@@ -15,26 +15,50 @@ _YEAR = 'date'
 _TRACK = 'tracknumber'
 _LENGTH = 'length'
 _RAW_TITLE = 'rawtitle'
+_FN_TITLE = 'fntitle'
+_NORM_FILNAME = 'normfilename'
 _TITLE = 'title'
-_ALL_KEYS = {_ARTIST : ['A:','Artiste'],_YEAR: ['Y:','Année'],_TRACK: ['P:','Piste'],
-            _TITLE: ['T:','Titre'],_LENGTH: ['L:','Longuer'], _RAW_TITLE: ['C','Titre court']}
-_READ_FILE_KEYS = [_ARTIST,_YEAR,_TRACK,_TITLE,_LENGTH]
-_SAVE_FILE_KEYS = [_ARTIST,_YEAR,_TRACK,_TITLE]
-_READ_FILENAME_KEYS = [_ARTIST,_YEAR,_TRACK,_RAW_TITLE]
-_FNAME_TITLE_SUM_KEYS = [_YEAR,_TRACK,_RAW_TITLE]
+_MODEL = 'model'
 _CURRENT = 'current'
 _PREVIOUS = 'previous'
 _LOCAL = 'local'
 _DISTANT = 'distant'
-_FILE = 'file'
+_SOURCE = 'source'
+_ID = 'id'
 _FILENAME = 'filename'
-_PHY_MODELS = [_FILE,_CURRENT,_PREVIOUS]
+_RELPATH = 'relpath'
+_EXT = 'extension'
+_PHY_MODELS = [_SOURCE,_CURRENT,_PREVIOUS]
 _CURRENT_PREVIOUS = [_CURRENT, _PREVIOUS]
 _ALL_ROOTS = [_LOCAL,_DISTANT]
+_CP_FILE = 'cur/prev'
+_SMALLER = 1
+_BIGGER = 2
+_EQUAL = 3
+_SIMILAR = 4
 
-_OLDER = 1
-_NEWER = 2
-SAME = 3
+_ALL_KEYS = {_FILENAME : ['F:',_FILENAME],_ARTIST : ['A:','Artiste'],_YEAR: ['Y:','Année'],_TRACK: ['P:','Piste'],
+            _TITLE: ['T:','Titre'],_LENGTH: ['L:','Longuer'], _RAW_TITLE: ['C','Titre court'],
+            _FN_TITLE: ['F','Titre fn'],_MODEL : ['',''],_ID : ['',''],_NORM_FILNAME : None, _EXT : ['Ex','Extension']}
+_READ_FILE_KEYS = [_ARTIST,_YEAR,_TRACK,_TITLE,_LENGTH]
+_SAVE_FILE_KEYS = [_ARTIST,_YEAR,_TRACK,_TITLE]
+_READ_FILENAME_KEYS = [_ARTIST,_YEAR,_TRACK,_FN_TITLE,_EXT,_LENGTH]
+_TITLE_SUM_KEYS = {
+    _SOURCE : [_LENGTH,_RAW_TITLE],
+    _CURRENT : [_LENGTH,_MODEL,_RAW_TITLE],
+    _PREVIOUS : [_LENGTH,_MODEL,_RAW_TITLE],
+    }
+_CALC_FILENAME={
+    _SOURCE : [_ARTIST,_YEAR, _TRACK, _FN_TITLE],
+    _CURRENT : [_ARTIST,_MODEL],
+    _PREVIOUS : [_ARTIST,_MODEL]
+}
+_RAW_TITLE_SUM_KEYS = { _SOURCE :[_YEAR,_TRACK,_FN_TITLE],
+    _CURRENT : [_FN_TITLE],
+    _PREVIOUS : [_FN_TITLE]
+}
+_EXCLUDE_FROM_TITLE = ['0000','00','',None]
+_FILE_TITLE_SUM_KEYS = [_LENGTH,_YEAR,_TRACK,_RAW_TITLE]
 
 def getErrorMmessage():
     exc_type, exc_value, exc_tb = sys.exc_info()
@@ -52,7 +76,6 @@ class RBException(Exception):
     def __init__(self, message) -> None:
         super().__init__(message)
 
-
 class RBFileNotFound(RBException):
     def __init__(self, filepath) -> None:
         message = f'Fichier audio {filepath} inexistant'
@@ -66,7 +89,7 @@ class RBArtistNotFound(RBException):
 class RBTagError(RBException):
     def __init__(self, model,root) -> None:
         filename = bot.audio.getFullFilePath(model,root)
-        message = f'lors de l\'écriture du fichier audio {filename}'
+        message = f'lors de l\'écriture des tags dans {filename}'
         super().__init__(message)
 
 class RBCopyError(RBException):
@@ -74,18 +97,18 @@ class RBCopyError(RBException):
         message = f'lors de la copie du fichier {fromFile} vers {toFile}'
         super().__init__(message)
 
-class Engine():
-
+class Logger():
+    
     def __init__(self,screenLevel,fileLevel) -> None:
 
-        self.audio = None
         self.wrapper = None
         self.logFilename = None
         self.screenLevel = screenLevel
         self.fileLevel = fileLevel
         self.countAttention = 0
         self.countError = 0
-        self.history = ''
+        self.counter = 0
+        self.history = []
         self.timeStamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         self.changeCount = 0
  
@@ -97,19 +120,6 @@ class Engine():
     
         return False
     
-    def close(self):
-        if self.history is not None and self.logFilename is not None:
-            if self.countError:
-                self.logFilename += '_[ERREUR]'
-            elif self.countAttention:
-                self.logFilename += '_[ATTENTION]'
-            self.logFilename +='.log'
-            if self.open():
-                self.wrapper.write(self.history)
-                self.history = None
-                self.wrapper.close()
-        logFilename = formatToUnixPath(bot.logFilename)
- 
     def open(self):
 
         try:
@@ -121,40 +131,29 @@ class Engine():
         else:
             return True        
 
-    def launchActions(self,fileID):
-        try:
-            self.Info("Fichier sélecionné : " + fileID['relpath'] + fileID[_FILENAME])
-            self.audio = AudioFile(fileID)
-
-            self.Info("Emission/artiste présent dans la liste des émissions : " + self.audio.getTag(_ARTIST) )
-                # need to update tags
-            if not self.audio.checkTags():
-                self.Info("Fichier incorrectement taggé - > sauvegarde des tags")
-                self.audio.correctFileTagsInfo()
-            else:
-                self.Info("Fichier correctement taggé - > aucune action")
-            if self.audio.processCP:
-                #les fichiers currents et previous doivent étre gérés
-                self.audio.manageCP()
-            else:
-                self.Info("Pas de gestion des current/previous pour ce fichier")
-            # vérifie que l'orthographe de l'artiste dans le nom du fichier soit celui par défaut
-            if strCompare(self.audio.getTag(_ARTIST,_FILENAME),self.audio.getTag(_ARTIST,_FILE)) < 2:
-                # fichier incorrrectement nommé
-                if settings.autoCorrectFilename:
-                    self.Info("Fichier incorrectement nommé -> renommage")
-                    self.audio.saveFileName()
-                else:
-                    self.Warning("Fichier incorrectement nommé mais pas de renommage - voir RBTagger.ini")
-
-            if self.audio.hasChanged:
-                self.changeCount +=1
-        except RBException as e:
-            self.Error(str(e))        
-        except Exception as e:
-            self.Error(getErrorMmessage())
-            self.Error(f"Erreur non gérée : fin du traitement du fichier audio" )
-
+    def close(self):
+        if self.history is not None and self.logFilename is not None:
+            if self.countError:
+                self.logFilename += '_[ERREUR]'
+            elif self.countAttention:
+                self.logFilename += '_[ATTENTION]'
+            self.logFilename +='.log'
+            if self.open():
+                for message in self.history:
+                    if message[0] <= self.fileLevel:
+                        self.wrapper.write("{:03.0f}".format(message[2]) + f' : {message[1]}' )
+                self.history = None
+                self.wrapper.close()
+        logFilename = formatToUnixPath(bot.logFilename)
+    
+    
+    def getlevelMessage(self, level):
+        res = ''
+        for message in bot.history:
+            if message[0] == level:
+                res += message[1]                
+        return res
+    
     def start(self,_setting):
         global settings
         settings = _setting
@@ -165,21 +164,7 @@ class Engine():
         if self.fileLevel > 0:
             self.logFilename = _setting.logPath + _setting.logMask + '_' + datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         self.Info('Logger démarré')
-    
-    def scan(self):
-    ### need to checl params in dirscan    
-        if settings.scanDirectory:
-            return DirScan()
-        else:
-            if os.path.exists(settings.syncPath):
-                if os.path.isdir(settings.syncPath):
-                    file = settings.syncPath + self.getLastFile(settings.syncPath, settings.syncSignature)
-                else:
-                    file = settings.syncPath
-                return FileScan(file)
-            else:
-                self.Error("Para")
-        
+
     def rotate(self):
 
         limitDate = datetime.now() - timedelta(days=settings.logLimit)
@@ -218,8 +203,11 @@ class Engine():
         if p_level <= self.screenLevel:
             print(message)
 
-        if p_level <= self.fileLevel:
-            self.history += now  + message + '\n'
+#        if p_level <= self.fileLevel:
+#            self.history += now  + message + '\n'
+        message = message + '\n'
+        self.history.append([p_level,message,self.counter])
+        self.counter +=1
 
     def Error(self,message=""):
         self.send(message,0)
@@ -236,6 +224,68 @@ class Engine():
     def Verbose(self,message=""):
         self.send(message,4)
 
+class Engine(Logger):
+
+    def __init__(self,screenLevel,fileLevel) -> None:
+
+        self.audio = None
+        super().__init__(screenLevel,fileLevel)
+    
+    def manageAudioSet(self,fileID):
+        try:
+            filename = fileID[_RELPATH] + fileID[_FILENAME]
+            self.Info("Fichier sélectionné : " + filename)
+            self.audio = AudioFile(fileID)
+
+            self.Info("Emission/artiste présent dans la liste des émissions : " + fileID[_ARTIST] )
+                # need to update tags
+            tags = self.audio.models[_SOURCE]
+            self.Detail("Tags calculés à partir du nom du fichier : " + tags.getID(calc=True))
+            self.Detail("Tags enregistrés dans le fichier         : " +  tags.getID())
+            if not self.audio.checkFileTags(_SOURCE):
+                self.Info("Fichier incorrectement taggé - > sauvegarde des tags")
+                self.audio.correctFileTagsInfo(_SOURCE)
+            else:
+                self.Info("Fichier correctement taggé")
+            if self.audio.processCP:
+                #les fichiers currents et previous doivent étre gérés
+#                self.audio.loadTagsSets()
+                self.audio.manageCP()
+            else:
+                self.Info("Pas de gestion des current/previous pour ce fichier")
+            # vérifie que l'orthographe de l'artiste dans le nom du fichier soit celui par défaut
+            if self.audio.checkFilename(_SOURCE) !=  _EQUAL:
+                # fichier incorrrectement nommé
+                if settings.autoCorrectFilename:
+                    self.Info("Fichier incorrectement nommé -> renommage")
+                    self.audio.saveFileName()
+                else:
+                    self.Warning(f"Fichier {filename} incorrectement nommé mais pas de renommage - voir RBTagger.ini")
+
+        except RBException as e:
+            self.Error(str(e))        
+        except Exception as e:
+            self.Error(getErrorMmessage())
+            self.Error(f"Erreur non gérée : fin du traitement du fichier audio" )
+        finally:
+            if self.audio.hasChanged:
+                self.changeCount +=1
+		    
+
+    def scan(self):
+    ### need to checl params in dirscan    
+        if settings.scanDirectory:
+            return DirScan()
+        else:
+            if os.path.exists(settings.syncPath):
+                if os.path.isdir(settings.syncPath):
+                    file = settings.syncPath + self.getLastFile(settings.syncPath, settings.syncSignature)
+                else:
+                    file = settings.syncPath
+                return FileScan(file)
+            else:
+                self.Error("Para")
+        
     def getLastFile(self,directory,filter):
 
         # get last diff logfile path
@@ -262,13 +312,16 @@ class Engine():
 
 bot = Engine(1,3)
 
-def formatToUnixPath(path,isDir=False,reverse = False):
+def formatToUnixPath(path,isDir=False,reverse = False,removeQuotes = False):
     path = re.sub('\\n','',path)
+    if removeQuotes:
+        path = re.sub('"|\'','',path)
+        
     fromSep = "\\"
     toSep = "/"
     if reverse:
         fromSep = '/'
-        toSep = r"\\"
+        toSep = r'\\'
     newPath =  path.replace(fromSep,toSep)
     if isDir and newPath[-1:] != toSep : 
         newPath += toSep
@@ -284,10 +337,13 @@ def removeAccents(s):
 
 def strCompare(a,b) -> int:
     if a == b:
-        return 2
+        return _EQUAL
     if (normalizeName(a) == normalizeName(b)):
-        return 1
-    return 0
+        return _SIMILAR
+    if a > b:
+        return _BIGGER
+    else:
+        return _SMALLER
 
 def formatLasting(lasting):
             length = float(lasting)
@@ -295,73 +351,101 @@ def formatLasting(lasting):
             seconds = "{:02d}".format(int(round(length % 60)))
             return '(' + ":".join([minutes, seconds]) + ')'
 
-def striptFilePath(fullPathname):
+def splitFilePath(fullPathname):
     global settings
     
     pathTab = fullPathname.rsplit('/',maxsplit=1)
-    path = pathTab[0]
+    path = pathTab[0]+'/'
+    filename = pathTab[1]
     find = '(' + '|'.join(settings.root[x] for x in settings.root)+ r')(.*)'
     match = re.search(find,path,re.I)
     if match:
-        return match.group(2)+'/',pathTab[1]
+        relpath = match.group(2)
+        return relpath,filename
     else:
         return None,None
 
-class TagsSet(list):
+class ModelTags(list):
     """ Classe permettant d'accéder aux fonctions de mutagen. """
 
     
-    def __init__(self,model,root=_LOCAL,fullPathname='') :
-        self.keys = {}
+    def __init__(self,model, root=_LOCAL, calcTags=None) :
         self.model = model
         self.root = root
-        self.audio = None
-        self.tags={}
+        self.fileTags = None
+        self.calcTags = {}
+        self.hasFile = False
+        
 
-        if model in _PHY_MODELS:
-            self.loadfromFile(fullPathname)
-            
-    def __str__(self) -> str:
-           return " ".join( _ALL_KEYS[key][0] + self.keys[key] for key in _SAVE_FILE_KEYS)
-    
-    def loadfromFile(self,fullPathName):
+        if model == _SOURCE:
+            self.calcTags = calcTags
+        else:
+            self.calcTags = calcTags.copy()
+        
+
+    def loadSet(self,fullPathname=''):
+        self.relpath, filename = splitFilePath(fullPathname)
+        self.loadPhyTags(fullPathname)
+        self.hasFile = True
+
+    def loadPhyTags(self,fullPathName):
         try:
-            self.tags = MP3(fullPathName, ID3=EasyID3)
+            self.fileTags = MP3(fullPathName, ID3=EasyID3)
             # print(self.tags.valid_keys.keys())
         except:
-            # le fichier ne possède aucun tag
-            self.tags = mutagen.File(fullPathName, easy=True)
-            self.tags.add_tags()
-        finally:
+            self.fileTags = mutagen.File(fullPathName, easy=True)
+            self.fileTags.add_tags()
+        if self.model == _SOURCE:
+            self.calcTags[_LENGTH]= formatLasting(self.fileTags.info.length)
+        else:
             for key in _READ_FILE_KEYS:
-                self.keys[key] = self.readTag(key)
+                self.calcTags[key] = self.getFileTag(key)
+            self.calcTags[_MODEL] = self.model    
+            rt = re.sub(r'\s?\(.+\)\s?-?','',self.fileTags[_TITLE][0])
+            rt = re.sub('|'.join(r'\s?-?' + x + r'-?\s?' for x in _CURRENT_PREVIOUS),'',rt)
+            self.calcTags[_FN_TITLE] = rt
+        return True
 
-            if self.model in _CURRENT_PREVIOUS:
-                self.keys[_TITLE] = re.sub(self.model + '-','',self.keys[_TITLE],re.IGNORECASE)
-            return True
-
+    def getID(self, calc = False):
+        if calc:
+            return " ".join( _ALL_KEYS[key][0] + self.getCalcTag(key) for key in _READ_FILE_KEYS )    
+        else:
+            return " ".join( _ALL_KEYS[key][0] + self.getFileTag(key) for key in _READ_FILE_KEYS )    
     
-    def loadFromTags(self,tags):
-        pass
+    def getCalcTag(self,key,model= None):
+        if not model:
+            model = self.model
+        self.calcTags[_MODEL] = model
+        if key == _TITLE:
+            return '-'.join( self.getCalcTag(x,model) for x in _TITLE_SUM_KEYS[model] if self.getCalcTag(x,model) not in _EXCLUDE_FROM_TITLE)
+        elif key == _RAW_TITLE:
+            return '-'.join(self.getCalcTag(x,model) for x in  _RAW_TITLE_SUM_KEYS[model] if self.getCalcTag(x,model) not in _EXCLUDE_FROM_TITLE)
+        else:
+            return self.calcTags[key]
 
-    def readTag(self,Key) -> str:
+    def getFileTag(self,key) -> str:
+        """ retourne les tags enregistrés dans fichier """
         try:
-            if Key == _LENGTH:
-                return self.tags.info.length
+            if key in [_RELPATH,_FILENAME]:
+                       return self.__dict__[key]
+            elif key == _LENGTH:
+                return formatLasting(self.fileTags.info.length)
             else:
-                return self.tags[Key][0]
+                return self.fileTags[key][0]
         except:
-            self.tags[Key] = ''
+            self.fileTags[key] = ''
             return ''
  
-    def save(self):
-        for key in _READ_FILE_KEYS :
-            if key != _LENGTH :
-                self.tags[key] = self.keys[key] 
-        try:
-            self.tags.save()
-        except:
-            raise RBTagError(self.model, self.root)
+    def compareTag(self,key):
+        return self.getCalcTag(key) == self.getFileTag(key)
+    
+    def save(self,model=None):
+        if not model:
+            model =self.model
+   
+        for key in _SAVE_FILE_KEYS :
+                self.fileTags[key] = self.getCalcTag(key,model) 
+        self.fileTags.save()
 
 class Scanner():
 
@@ -380,7 +464,7 @@ class Scanner():
 
         self.getFiles()
         if self.files:
-            self.files.sort(key = lambda x : x['normfilename'],reverse=True)
+            self.files.sort(key = lambda x : x[_NORM_FILNAME],reverse=True)
             return self.files
         return []
 
@@ -414,19 +498,19 @@ class Scanner():
                 artist = res[0] 
                 artistInfo = self.checkArtist(artist)
                 if artistInfo:
-                    date = res[1] 
-                    tracknumber = res[2]
+                    date = "{:04.0f}".format(int(res[1]))
+                    tracknumber = "{:02.0f}".format(int(res[2])) 
                     title = res[3]
                     extension = res[4]
                     normfilename = re.sub(artist,artistInfo['rawartist'], filename.lower())
-                    info = {_YEAR : date, _TRACK : tracknumber, _RAW_TITLE : title, _FILENAME : filename,
-                            'normfilename' : normfilename, 'relpath' : relpath, 'ext' : extension}
+                    info = {_YEAR : date, _TRACK : tracknumber, _FN_TITLE : title, _FILENAME : filename,
+                            _NORM_FILNAME : normfilename, _RELPATH : relpath, _EXT : extension,_LENGTH : ''}
                     info.update(artistInfo)
                     return info
                 else:
                     bot.Warning(f'{relpath}{filename} : Artiste {artist} non présent dans la liste des émissions')
         else:
-            bot.Info(f'{relpath}{filename} : Format de nom de fichier incorrect, analyse impossible')
+            bot.Verbose(f'{relpath}{filename} : Format de nom de fichier incorrect, analyse impossible')
         return False
 
     def captureFind(self, find):
@@ -437,7 +521,7 @@ class Scanner():
 
         try:
             line = formatToUnixPath(line)
-            bot.Detail("Ligne analysée :" + line)
+            bot.Verbose("Ligne analysée :" + line)
             if self.currentLine == 0 :
                 for findRow in self.lineFilter:
                     match = re.search(findRow[0], line,re.I)
@@ -452,7 +536,7 @@ class Scanner():
                 if match:    
                     bot.Verbose('Correspondance : ' +match.group(1) )
                     filepath = match.group(2)
-                    relpath,filename = striptFilePath(filepath)
+                    relpath,filename = splitFilePath(filepath)
                     self.nbLinesFilter = 1
                     self.currentLine = 0
                     if self.hasNotExcludedFilePath(relpath, filename):
@@ -461,7 +545,7 @@ class Scanner():
                             bot.Info('Fichier OK: ' + relpath + filename )
                             return fileID
                 else:
-                    bot.Detail("Pas de correspondance")
+                    bot.Verbose("Pas de correspondance")
                     self.nbLinesFilter = 1
                     self.currentLine=0
                     return None
@@ -553,130 +637,113 @@ class AudioFile:
     
     def __init__(self,fileID):
 
-        self.tags={_FILE : None, _CURRENT : None, _PREVIOUS : None,_FILENAME:None}
+        self.models={_SOURCE : None, _CURRENT : None, _PREVIOUS : None}
         self.hasChanged = False
-        key = r'(' + '|'.join(settings.root.values()) + r')(.+/)(.+)\.' \
-            + r'(' + '|'.join(settings.allowedExtensions) + r')'
         
         self.filename = fileID[_FILENAME]
-        self.relativePath = fileID['relpath']
-        self.extension = fileID['ext']
+        self.relativePath = fileID[_RELPATH]
         self.processCP = fileID['processCP']
-        tag = TagsSet(_FILENAME)
+        tags = {}
         for key in _READ_FILENAME_KEYS:
-            tag.keys[key] = fileID[key] 
-        tag.keys[_TITLE] = '-'.join(tag.keys[x] for x in _FNAME_TITLE_SUM_KEYS if tag.keys[x])
-       
-        self.tags[_FILENAME] = tag
-
-        for root in settings.root.keys():
-            path = self.getFullFilePath(_FILE,root)
-            if (root == _LOCAL or settings.makeDistCopy) and not os.path.exists(path) :
+            tags[key] = fileID[key] 
+        
+        self.loadModelsSets(calcTags=tags)
+        self.loadModelsTags()
+        for root in settings.root:
+            path = self.getFullFilePath(root=root)
+            if (root != _DISTANT or settings.makeDistCopy) and not os.path.exists(path):
                 raise RBFileNotFound(path)
 
-    def loadAllTags(self):
+    def loadModelsTags(self,root=_LOCAL):
+        for model in _PHY_MODELS : # 
+            if self.processCP or model == _SOURCE:
+                self.loadModelTags(model,root)
 
-        self.tags[_FILE] = self.loadTags(_FILE,_LOCAL)
-        self.tags[_FILENAME].keys[_TITLE] += ' ' + formatLasting(self.tags[_FILE].keys[_LENGTH])
-        if self.processCP:
-            for model in _CURRENT_PREVIOUS :
-                self.tags[model] = self.loadTags(model,_LOCAL)
-        
-    def loadTags(self,model=_FILE,root=_LOCAL):
-        if model != _FILENAME:
-            fullPathName = self.getFullFilePath(model,root)
-            if not os.path.exists(fullPathName):
-                bot.Info("Fichier " + fullPathName + " inexistant : lecture tag impossible")
-                return None
-            return TagsSet(model,root,fullPathName)
-        else:
-            return TagsSet(model,root)
+    def loadModelTags(self,model=_SOURCE,root=_LOCAL):
+        fullPathName = self.getFullFilePath(model,root,calc=True)
+        if os.path.exists(fullPathName):
+            self.models[model].loadSet(fullPathName)
+            
+    def loadModelsSets(self,root=_LOCAL,calcTags=None):
+        for model in _PHY_MODELS : # 
+            if self.processCP or model == _SOURCE:
+                self.models[model] = self.loadModelSets(model, root=_LOCAL, calcTags = calcTags)
+            
+    def loadModelSets(self, model, root=_LOCAL, calcTags = None, fullPathName = None):
+        return ModelTags(model,root,calcTags)
+    
 
-    def getFullFilePath(self,model=_FILE,root=_LOCAL):
-        return self.getRootDir(root) + self.getRelativeFilePath(model)
+    def getFullFilePath(self,model=_SOURCE,root=_LOCAL,calc=False):
+        return self.getRootDir(root) + self.getRelativeFilePath(model,calc=calc)
 
-    def getRelativeFilePath(self,model=_FILE):
+    def getRelativeFilePath(self,model=_SOURCE,calc=False):
         return self.getRelativePath(model)  + self.getFileName(model)
 
-    def getFileName(self,model=_FILE):
-        tags = self.tags[_FILENAME]
-        
-        if model == _FILE:
-            return self.filename
-        elif model == "filename":
-            return "#".join(tags.keys[x] for x in _READ_FILENAME_KEYS if tags.keys[x]) + "." + self.extension
-        elif model in _CURRENT_PREVIOUS: 
-            return "#".join([tags.keys[_ARTIST],model]) + "." + self.extension
-
+    def getFileName(self,model=_SOURCE,calc=False):
+        if model == _SOURCE and not calc:
+            return  self.filename
+        else:
+           return   "#".join(self.getTag(field,model,calc=True) for field in _CALC_FILENAME[model] \
+                        if self.getTag(field,model,calc=True) ) + '.' + self.getTag(_EXT,_SOURCE,calc=True)
+    
     def getRootDir(self,root=_LOCAL):
             return settings.root[root]
 
-    def getModelRootDir(self,model=_FILE,root=_LOCAL):
+    def getModelRootDir(self,model=_SOURCE,root=_LOCAL):
         return self.roodir(root) + self.getRelativePath(model)
     
-    def getRelativePath(self,model):
-        if model == _FILE:
+    def getRelativePath(self,model,calc=False):
+        if model == _SOURCE:
             return  self.relativePath
         else:
             return  settings.currentPath 
     
-    def getRealName(self):
-        return self.tags[_FILENAME].artist
-    
-    def getTag(self, key, model = _FILENAME, root = _LOCAL):
-        return self.tags[model].keys[key]
+    def getTag(self, key,model = _SOURCE,calc = False):
         
-        return self.tags[model].keys[key]
-
-       # détermine la soure de synchro
-
-    def audioIsNewer(self,modelA,modelB):
-        if self.tagsAreSame(modelA,modelB) : return SAME
-        if self.tags[modelA].keys[_TITLE] > self.tags[modelB].keys[_TITLE]: 
-            return _NEWER
+        if calc:
+#            self.tags[_SOURCE].calcTags[_MODEL] = model
+            return self.models[model].getCalcTag(key,model)
         else:
-            return _OLDER
+            return self.models[model].getFileTag(key)
+ 
+    def compareModelTag(self,key,modelA,modelB):
+
+        rawTitleA = self.getTag(key, modelA,calc=True)
+        rawTitleB = self.getTag(key, modelB,calc=True)
+        return strCompare(rawTitleA,rawTitleB)
     
-    def tagsAreSame(self,modelA,modelB):
-        if modelA and modelB :
-            return (self.tags[modelA].keys[_TITLE] == self.tags[modelB].keys[_TITLE])
-        else:
-            return False
+    def checkTags(self,model,key):
+        return strCompare(self.getTag(key,model,calc=True),self.getTag(key,model))
+
+    def checkFilename(self, model):
+        return strCompare(self.getFileName(model,calc=True),self.getFileName(model))   
     
-    def artistsAreSame(self,modelA,modelB):
-        isok = self.tags[modelA].artist == self.tags[modelB].artist
-        if modelA and modelB :
-            if not isok:
-                bot.Detail( self.tags[modelA].artist + " != " + self.tags[modelB].artist)
-            return isok
-        else:
-            return False
-         
-    def checkTags(self):
-        self.loadAllTags()
-        bot.Detail("Tags calculés à partir du nom du fichier : " + str(self.tags[_FILENAME]))
-        bot.Detail("Tags enregistrés dans le fichier         : " + str(self.tags[_FILE]))
-        if not self.tagsAreSame(_FILENAME,_FILE):
-            return False
-        return True
+    def saveFilename(self,model):
+        self.renameAudio(_SOURCE,_SOURCE)
 
-    def correctFileTagsInfo(self):
+    def checkFileTags(self,model):
+        return self.checkTags(model,_TITLE)  == _EQUAL
 
+    def correctFileTagsInfo(self,model):
+
+        message = "Modification des tags ID3"
         if not settings.noAction:
             try:
-                message = "Modification locale des tags ID3"
                 root = _LOCAL
-                self.copyTags(self.tags[_FILENAME],self.tags[_FILE])    
+                self.models[model].save()
                 bot.Info("OK local : " + message)
+                self.hasChanged = True
                 if settings.makeDistCopy:
                     root = _DISTANT
-                    distantTags = self.loadTags(_FILE,root)
-                    self.copyTags(self.tags[_FILENAME],distantTags)  
+                    self.models[model].loadSet(self.getFullFilePath(model,root))
+                    self.models[model].save()
                     bot.Info("OK distant : " + message)
             except:
-                raise RBTagError(_FILE,root)
+                raise RBTagError(model,root)
+            else :
+                return True                
         else:
-            bot.Info("NoAction : Commande modification des tags ID3 non exécutée")
+            bot.Info(f"NoAction :  {message}")
 
     def copyAudio(self,modelSource,modelDestination):
         message = "Copie du fichier " + modelSource + " vers " + modelDestination
@@ -688,12 +755,11 @@ class AudioFile:
                     cmd = 'copy /Y "' + formatToUnixPath(sourceFile, reverse=True) + '" "' + \
                         formatToUnixPath(distFile, reverse = True)+ '" 2>&1'
                     bot.Verbose("Commande : " + cmd)
-                    if subprocess.call(cmd, shell=True):
+                    result = subprocess.call(cmd, shell=True)
+                    if result == 0:
                         bot.Detail("Copie effectuée")
-                    newTags = self.loadTags(modelDestination,_LOCAL)
-                    newTags.keys[_TITLE] = "-".join([modelDestination, newTags.keys[_TITLE]])
-                    newTags.save()
-                    self.tags[modelDestination] = newTags 
+                    self.models[modelDestination].loadSet(distFile)
+                    self.models[modelDestination].save(modelDestination)
                     self.hasChanged = True
                     bot.Info( f"OK : Copie du fichier {sourceFile}  vers {distFile}")
                     sourceFile = self.getFullFilePath(modelDestination)
@@ -713,63 +779,55 @@ class AudioFile:
         if not settings.noAction:
             try:
                 if modelDestination in (_CURRENT,_PREVIOUS):
-                    self.tags[modelSource].keys[_TITLE]  = modelDestination + "-" +self.tags[modelSource].keys[_TITLE] 
-                    self.tags[modelSource].save()
-                    os.replace(self.getFullFilePath(modelSource), self.getFullFilePath(modelDestination))
+#                    self.tags[modelSource].keys[_TITLE]  = modelDestination + "-" +self.tags[modelSource].keys[_TITLE] 
+                    self.models[modelSource].save(model = modelDestination )
+                    os.replace(self.getFullFilePath(modelSource), self.getFullFilePath(modelDestination,calc=True))
                     self.hasChanged = True
                     bot.Info( message )
                 if settings.makeDistCopy:
-                        #shutil.copy2(self.getFullFilePath(modelDestination),self.getFullFilePath(modelDestination,_DISTANT))
                     if modelDestination in (_CURRENT,_PREVIOUS):
-                        distTags = self.loadTags(modelSource,_DISTANT)
+                        distTags = self.loadModelSets(modelDestination,_DISTANT, calc =self.models[modelDestination].calcTags)
+                        distTags.loadSet(self.getFullFilePath(modelDestination,root=_DISTANT,calc=True))
                         if distTags:
-                            distTags.keys[_TITLE]  = modelDestination + "-" + distTags.keys[_TITLE] 
-                            distTags.save()
-                    os.replace(self.getFullFilePath(modelSource,_DISTANT), self.getFullFilePath(modelDestination,_DISTANT))
-                    shutil.copystat(self.getFullFilePath(modelDestination,_LOCAL),self.getFullFilePath(modelDestination,_DISTANT))
+                            distTags.save(model = modelDestination)
+
+                    os.replace(self.getFullFilePath(modelSource,_DISTANT), self.getFullFilePath(modelDestination,_DISTANT,calc=True))
+                    shutil.copystat(self.getFullFilePath(modelDestination,_LOCAL),self.getFullFilePath(modelDestination,_DISTANT,calc=True))
             except:
-                bot.Error('Erreur fatala lors de ' + message)
+                bot.Error('Erreur fatale lors de ' + message)
         else:
             bot.Info("NoAction : " + message )
-
-    def copyTags(self,sourceTags,destTags):
-            
-        for key in _SAVE_FILE_KEYS:
-            destTags.keys[key] = sourceTags.keys[key]
-        if destTags.model in _CURRENT_PREVIOUS:
-            destTags.keys[_TITLE] = '-'.join(destTags.model , destTags.keys[_TITLE] )
-        destTags.save()
-
 
     def manageCP(self):
         #spn_current : emplacement court du fichier current local relatif au dossier root 5bYAYUk9vv8Lfn9*
 
-        if self.tags[_CURRENT] is not None:
-            state = self.audioIsNewer(_FILE,_CURRENT)
-            if state == _NEWER:
+        if self.models[_CURRENT].hasFile:
+            state = self.compareModelTag(_RAW_TITLE,_SOURCE,_CURRENT)
+            if state == _BIGGER:
                 bot.Info('Fichier #current plus ancien')
                 bot.Info('Fichier current remplace #previous')
                 self.renameAudio(_CURRENT,_PREVIOUS)
                 bot.Info('Fichier traité remplace #current')
-                self.copyAudio(_FILE,_CURRENT)
-            elif state == _OLDER:
+                self.copyAudio(_SOURCE,_CURRENT)
+            elif state == _SMALLER:
                 bot.Info('Fichier #current plus récent')
-                if self.tags[_PREVIOUS] is None or self.audioIsNewer(_FILE,_PREVIOUS) == _NEWER:
+                if not self.models[_PREVIOUS].hasFile or self.compareModelTag(_RAW_TITLE,_SOURCE,_PREVIOUS) == _BIGGER:
                         bot.Info('Fichier #previous plus ancien ou inexistant')
                         bot.Info('Fichier traité se duplique en #previous')
-                        self.copyAudio(_FILE,_PREVIOUS)
+                        self.copyAudio(_SOURCE,_PREVIOUS)
                 else:
                     bot.Info('Fichier #previous plus ou aussi récent')
             else:
                 bot.Info('Fichier traité identique au #current')   
         else:
             bot.Info('Fichier traité se duplique en #current (inexistant)')
-            self.copyAudio(_FILE,_CURRENT)
+            self.copyAudio(_SOURCE,_CURRENT)
 
     def saveCorrectFileName(self):
         for root in (_LOCAL,_DISTANT):
-            if settings.makeDistCopy :
-                self.renameAudio(_FILE,_FILENAME)
+            if settings.makeDistCopy or root == _LOCAL :
+                pass
+            #    self.renameAudio(_SOURCE,_FILENAME)
  
 
 

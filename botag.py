@@ -1,105 +1,127 @@
 import os
 import re
-from botools import *
+from RBTools import *
 import configparser
 import keyboard
 import argparse
 
-
+_BOTH = 0
+_CMD_ONLY = 1
+_INI_ONLY = 2
 
 
 class Settings(configparser.ConfigParser):
-    """settings class"""
 
+    configsList = {'section' : None,'varType' : 'str', 'location' : _INI_ONLY, 'shortCmd' : '','default' : None,'multi' : 0,'helpTxt' : ''}
+    attribsList = { 
+        'progFileTxt' : {'section' :'GENERAL', 'varType' : 'path','location' : _INI_ONLY} ,
+        'noAction' : {'section' :'GENERAL', 'varType' : 'bool','location' : _BOTH,'shortCmd' : '-na', 'default' : 0, 'helpTxt' : "(True/False) : si True, exécute le programme sans effectuer aucun changement"} ,
+        'makeDistCopy' : {'section' :'GENERAL', 'varType' : 'bool','location' : _BOTH,'shortCmd' : '-md', 'default' : True,'helpTxt' : "(True/False) : si True, effectue aussi les modifications sur les fichiers distants"} ,
+        'autoCorrectFilename' : {'section' :'GENERAL', 'varType' : 'bool','location' : _BOTH,'shortCmd' : '-ac','helpTxt' : "Emplacement"} ,
+        'excludedPaths' : {'section' :'GENERAL', 'varType' : 'path','location' : _INI_ONLY, 'multi' : 1, 'default' : '@'} ,
+        'testEnv' : {'section' :'GENERAL', 'varType' : 'bool','location' : _BOTH,'shortCmd' : '-te', 'default' : True,'helpTxt' : "(True/False) si True, exécution en mode test, l'emplacement des différents chemins est modifié"} ,
+        'changeLimit' : {'section' :'GENERAL', 'varType' : 'int','location' : _BOTH,'shortCmd' : '-cl', 'default' : 0,'helpTxt' : "Limite ne nombre de fichiers audio pouvant être modifié, 0 = aucune limite"} ,
+        'syncPath' : {'section' :'SCANFILE', 'varType' : 'path','location' : _BOTH,'shortCmd' : '-sp','helpTxt' : "Emplacement du fichier ou du répertoire contenant les logs à analyser"} ,
+        'syncSignature' : {'section' :'SCANFILE', 'varType' : 'str','location' : _BOTH,'shortCmd' : '-ss','helpTxt' : "signature permettant d'identifier les fichiers log"} ,
+        'syncActionLine' : {'section' :'SCANFILE', 'varType' : 'str','location' : _INI_ONLY, 'multi' : 2} ,
+        'scanDirectory' : {'section' :'SCANDIR', 'varType' : 'bool','location' :  _BOTH,'shortCmd' : '-sd','helpTxt' : "(True/False) si True, le répertoire racine va être parcouru pour vérifier les fichiers audio"} ,
+        'scanAudioFilter' : {'section' :'SCANDIR', 'varType' : 'path','location' :  _BOTH,'shortCmd' : '-af', 'multi' : 1, 'default' : '','helpTxt' : "Filtre les fichiers audio sur leur nome, plusieurs valeurs possible "} ,
+        'scanPathFilter' : {'section' :'SCANDIR', 'varType' : 'path','location' :  _BOTH,'shortCmd' : '-pf', 'multi' : 1, 'default' : '','helpTxt' : "Filtre les fichiers audio sur leur emplacement, plusieurs valeurs possible " } ,
+        'allowedExtensions' : {'section' :'AUDIO', 'varType' : 'str','location' : _INI_ONLY, 'multi' : 1, 'default' : 'mp3'} ,
+        'localRoot' : {'section' :'AUDIO', 'varType' : 'path','location' : _INI_ONLY} ,
+        'distRoot' : {'section' :'AUDIO', 'varType' : 'path','location' : _INI_ONLY} ,
+        'currentPath' : {'section' :'AUDIO', 'varType' : 'path','location' : _INI_ONLY, 'default' : 'current'} ,
+        'audioSignature' : {'section' :'AUDIO', 'varType' : 'str','location' : _INI_ONLY} ,
+        'logScreenLevel' : {'section' :'LOGS', 'varType' : 'int','location' : _BOTH,'shortCmd' : '-sl', 'default' : 2,'helpTxt' : "Filtre des messages à l'écran - 0:erreur 1:warning 2:info 3:détaillé 4:complet  -1 : rien du tout"} ,
+        'logFileLevel' : {'section' :'LOGS', 'varType' : 'int','location' : _BOTH,'shortCmd' : '-fl', 'default' : 3,'helpTxt' : "Filtre des messages log -  0:erreur 1:warning 2:info 3:détaillé 4:complet  -1 : rien du tout"} ,
+        'logPath' : {'section' :'LOGS', 'varType' : 'path','location' : _INI_ONLY} ,
+        'logMask' : {'section' :'LOGS', 'varType' : 'str','location' : _INI_ONLY, 'default' : 'TaggerID3Audio'} ,
+        'logRotation' : {'section' :'LOGS', 'varType' : 'bool','location' : _INI_ONLY, 'default' : True} ,
+        'logLimit' : {'section' :'LOGS', 'varType' : 'int','location' : _INI_ONLY, 'default' : 30} ,
+    }
     def __init__(self):
         super().__init__()
-        self.path = re.sub('py' , 'ini',__file__, re.IGNORECASE)
-        parser = argparse.ArgumentParser()
-        parser.add_argument('-s','--scanDirectory',default=None)
-        parser.add_argument('-l','--changeLimit',default=None,type=int)
-        parser.add_argument('-a','--scanAudioFilter',default=None, type = str)
-        parser.add_argument('-p','--scanPathFilter',default=None)
-        parser.add_argument('-n','--noAction',default=None)
-        self.args = parser.parse_args()
+        self.path = re.sub(r'py' , 'ini',__file__, re.IGNORECASE)
         self.read()
-        self.loadConfig()
+        self.initArgsParser()
 
+    def initArgsParser(self):
+        parser = argparse.ArgumentParser()
+        for attrib in  list(self.attribsList.keys()):
+            config = Settings.attribsList[attrib]
+            for field in list(Settings.configsList.keys()):
+                #initialise les champs manquants
+                if not field in config: 
+                    config[field] = Settings.configsList[field]
+            if config['location'] in [_BOTH,_CMD_ONLY]:
+                # configure l'argument de la ligne de commande si attrib autorisé 
+                parser.add_argument(config['shortCmd'], '--' + attrib, default=None,help=config['helpTxt'])            
+        try:
+            self.args = parser.parse_args()
+        except:
+            quit()
+        
 
     def read(self):
         bot.Info("Chargement fichier de configuration : " + self.path)
         try :
             super().read(self.path, encoding='utf-8')
         except:
-            bot.Error("Erreur fatale lors de la lecture du fichier de configuration " + self.path)
+            print("Erreur fatale lors de la lecture du fichier de configuration " + self.path)
             input("Tapez une touche pour terminer ou fermez cette fenêtre")
             exit()
 
-    def loadConfig(self):
+    def unfoldValues(self,values,multi,varType):
+        valuesList = []
+        if multi > 0:
+            values = values.split(',')
+            for value in values:
+                valuesList.append(self.formatOption(value,varType))
+            return valuesList
+        else:
+            return self.formatOption(values,varType)
+ 
+    def formatOption(self,value,varType):
+        if varType == 'int':
+            try:
+                value = int(value)
+            except:
+                value = None
+        elif varType == 'path':
+            value = formatToUnixPath(value,removeQuotes=True)                
+        elif varType == 'bool':
+            if value.lower() == 'true': value = True
+            elif value.lower() == 'false': value = False
+            else : value = None
+        return value
 
-        try:
-            self.progFileTxt = self.getOption('GENERAL','progFileTxt','path')
-            self.testEnv = self.getOption('GENERAL','testEnv','bool', False)
-
-            self.noAction = self.args.noAction
-            if self.noAction:
-                self.noAction = self.noAction.lower() != "false"
+    def loadAttribs(self):
+        for attrib in  list(self.attribsList.keys()):
+            config = Settings.attribsList[attrib]
+            if config['location'] in [_BOTH,_CMD_ONLY] and self.args.__dict__[attrib]:
+                values = self.unfoldValues(self.args.__dict__[attrib],config['multi'],config['varType'])
+            elif config['location'] in [_BOTH,_INI_ONLY]:
+                if config['multi'] == 2:
+                    linesList = []
+                    for i in range(0,9):
+                        line = super().get(config['section'],attrib + str(i),raw=True,fallback=config['default'])
+                        if line:
+                            linesList.append(self.unfoldValues(line, config['multi'], config['varType']))
+                        else:
+                            break
+                    values = linesList
+                else:
+                        values = super().get(config['section'],attrib,raw=True,fallback=config['default'])   
+                        values = self.unfoldValues(values, config['multi'], config['varType'])    
             else:
-                self.noAction = self.getOption('GENERAL','noAction','bool', True)
-
-            self.makeDistCopy = self.getOption('GENERAL','makeDistCopy','bool', True)
-            self.autoCorrectFilename = self.getOption('GENERAL','autoCorrectFilename','bool', False)
-            self.excludedPaths = self.getOption('GENERAL','excludedPaths','path',multi=True)
-
-            self.changeLimit = self.args.changeLimit
-            if not self.changeLimit:
-                self.changeLimit = self.getOption('GENERAL','changeLimit', 'int', 0)
-
-            self.syncPath = self.getOption('SCANFILE','syncPath','path')
-            self.syncSignature = self.getOption('SCANFILE','syncSignature', raw=True)
-            self.syncActionLine = self.getOption('SCANFILE','actionLine',multi=True)
-
-            self.scanDirectory = self.args.scanDirectory
-            if self.scanDirectory:
-                self.scanDirectory = self.scanDirectory.lower() == "true"
+                values = None     
+            if values is not None:
+                setattr(self,attrib, values) 
             else:
-                self.scanDirectory = self.getOption('SCANDIR','scanDirectory','bool', False)
-
-            self.scanAudioFilter = self.args.scanAudioFilter
-            if  self.scanAudioFilter:
-                self.scanAudioFilter = re.sub("'|\"",'',self.scanAudioFilter).split(',') 
-            else:
-                self.scanAudioFilter = self.getOption('SCANDIR','scanAudioFilter',default='', raw=True,multi = True)
-
-            self.scanPathFilter = self.args.scanPathFilter
-            if  self.scanPathFilter:
-                self.scanPathFilter = self.scanPathFilter.split(',') 
-            else:
-                self.scanPathFilter = self.getOption('SCANDIR','scanPathFilter',default='', raw=True,multi = True)
-
-
-            self.allowedExtensions = self.getOption('AUDIO','allowedExtensions','str', 'mp3',multi=True)
-            self.root={'local' : self.getOption('AUDIO','localRoot','path'),'distant' : self.getOption('AUDIO','distRoot','path')}
-            self.currentPath = self.getOption('AUDIO','currentPath','path',"current/")
-            self.audioSignature = self.getOption('AUDIO','audioSignature', raw=True)
-
-            self.logScreenLevel = self.getOption('LOG','screenLevel', 'int', 2)
-            self.logFileLevel = self.getOption('LOG','fileLevel', 'int', 3)
-            self.logRotation = self.getOption('LOG','rotation','bool', True)
-            self.logLimit = self.getOption('LOG','limit', 'int', 30)
-            self.logPath = self.getOption('LOG','logPath','path')
-            self.logMask = self.getOption('LOG','mask')
-
-        except FileNotFoundError as e:
-            print(e)
-            bot.Error("Erreur fatale, un paramètre obligatoire est manquant")
-            input("Tapez une touche pour terminer ou fermez cette fenêtre")
-            exit()
+                raise Exception(f'Option {attrib} manquante dans la configuration')                   
+        self.root={'local' : self.localRoot,'distant' : self.distRoot}
 
         self.logSignature =  self.logMask.lower() + r".+\.log"
-        for index,value  in enumerate(self.syncActionLine):
-            self.syncActionLine[index] = value.split(";")
-
-        #self.excludedPaths = ["sem#40","notag"]
 
         #overwrite global for testing mode
         if self.testEnv :
@@ -108,40 +130,6 @@ class Settings(configparser.ConfigParser):
             self.root = {'local' : "C:/Users/yves/Python Sources/RB/SyncA/", 'distant' : "C:/Users/yves/Python Sources/RB/SyncB/"}
             self.progFileTxt = "C:/Users/yves/Python Sources/RB/source/emissions_radio-ballade.txt"
 
-
-    def getOption(self,section,option,varType='str',default=None,multi=False,sep=',',raw=False):
-        if varType == 'path':
-            raw = True
-        values = super().get(section,option,raw=True,fallback=default)
-        if values is None:
-            bot.Error("Erreur fatale, Option manquante/erronée "+ section + "/" + option)
-            raise IndexError("Option manquante/erronée "+ section + "/" + option)
-        if multi:
-            values = values.split(sep)
-        else:
-            values = [values]
-        for i,value in enumerate(values):
-            if varType == 'path':
-                values[i] =  value.replace("\\","/")
-            elif varType == 'int':
-                if value.isdigit():
-                    values[i] = int(value)
-                elif default is not None:
-                    values[i] = default
-                else:
-                    bot.Error("Erreur fatale section:"+ section + " option:" + option + ", nombre non valide " + value)
-                    raise IndexError("Option manquante/erronée "+ section + "/" + option)
-            elif varType == 'bool':
-                if value.lower() == 'true':
-                    values[i] = True
-                else:
-                    values[i] = False
-
-        # print('')
-        if multi:
-            return values
-        else:
-            return values[0]
  
 def loadRadioPrograms():
 
@@ -187,9 +175,17 @@ def loadRadioPrograms():
         return ProgDict
 
 # MAIN PROGRAM
+
+try:
+    settings = Settings()
+except Exception as e:
+    print(getErrorMmessage())
+    quit()
+else:
+    settings.loadAttribs()
+
 with  bot:
     
-    settings = Settings()
     
     bot.start(settings)
 
@@ -210,30 +206,32 @@ with  bot:
             
             for fileID in files:
                 bot.Info()
-                bot.launchActions(fileID)
+                bot.manageAudioSet(fileID)
                 if bot.changeCount >= settings.changeLimit and settings.changeLimit > 0:
                     bot.Info('Le nombre de changements effectués a atteint la limite , relancer pour continuer')
                     break
         else:
             bot.Info('************************************************************')
-            bot.Info("Aucune fichier audio sélectionné : consulter les logs si ERREUR/WARNING")
+            bot.Info("Aucunl fichier audio sélectionné : consulter les logs si ERREUR/WARNING")
             bot.Detail('************************************************************')
         bot.Info()
 
     bot.Info("Fin du taggage synchronisé de Radio Ballade")
     bot.Info()
-    if settings.logRotation:
-        bot.Info("Démarrage du nettoyage des fichiers log supérieurs à " + str(settings.logLimit) + " jours")
-        bot.rotate()
-
     if bot.countAttention > 0 :
         print("***********************************************************************")
         print(f"    {bot.countAttention} WARNINGS(S) détecté(s)")
-        print("***********************************************************************")
+        print(bot.getlevelMessage(1))                
+#        print("***********************************************************************")
     if bot.countError > 0 :
         print("***********************************************************************")
         print(f"    {bot.countError} ERREUR(S) détectée(s)")
-        print("***********************************************************************")
+        print(bot.getlevelMessage(0))                
+#        print("***********************************************************************")
+    if settings.logRotation:
+#        bot.Info("Démarrage du nettoyage des fichiers log supérieurs à " + str(settings.logLimit) + " jours")
+        bot.rotate()
+
 
 
 print("Fin du traitement. Appuyer sur L pour voir le log complet")
