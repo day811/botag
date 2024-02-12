@@ -15,7 +15,6 @@ _YEAR = 'date'
 _TRACK = 'tracknumber'
 _LENGTH = 'length'
 _RAW_TITLE = 'rawtitle'
-_FN_TITLE = 'fntitle'
 _NORM_FILNAME = 'normfilename'
 _TITLE = 'title'
 _MODEL = 'model'
@@ -39,7 +38,7 @@ _SIMILAR = 4
 
 _ALL_KEYS = {_FILENAME : ['F:',_FILENAME],_ARTIST : ['A:','Artiste'],_YEAR: ['Y:','Année'],_TRACK: ['P:','Piste'],
             _TITLE: ['T:','Titre'],_LENGTH: ['L:','Longuer'], _RAW_TITLE: ['C','Titre court'],
-            _FN_TITLE: ['F','Titre fn'],_MODEL : ['',''],_ID : ['',''],_NORM_FILNAME : None, _EXT : ['Ex','Extension']}
+            _MODEL : ['',''],_ID : ['',''],_NORM_FILNAME : None, _EXT : ['Ex','Extension']}
 _READ_FILE_KEYS = [_ARTIST,_YEAR,_TRACK,_TITLE,_LENGTH]
 _SAVE_FILE_KEYS = [_ARTIST,_YEAR,_TRACK,_TITLE]
 _READ_FILENAME_KEYS = [_ARTIST,_YEAR,_TRACK,_RAW_TITLE,_EXT]
@@ -93,6 +92,11 @@ class RBCopyError(RBException):
         message = f'lors de la copie du fichier {fromFile} vers {toFile}'
         super().__init__(message)
 
+class RBMoveError(RBException):
+    def __init__(self, fromFile,toFile) -> None:
+        message = f'lors du déplacement du fichier {fromFile} vers {toFile}'
+        super().__init__(message)
+
 class Logger():
     
     def __init__(self,screenLevel,fileLevel) -> None:
@@ -103,7 +107,7 @@ class Logger():
         self.fileLevel = fileLevel
         self.countAttention = 0
         self.countError = 0
-        self.counter = 0
+        self.countLine = 0
         self.history = []
         self.timeStamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         self.changeCount = 0
@@ -203,11 +207,9 @@ class Logger():
         if p_level <= self.screenLevel:
             print(message)
 
-#        if p_level <= self.fileLevel:
-#            self.history += now  + message + '\n'
         message = message + '\n'
-        self.history.append([p_level,message,self.counter])
-        self.counter +=1
+        self.history.append([p_level,message,self.countLine])
+        self.countLine +=1
 
     def Error(self,message=""):
         self.send(message,0)
@@ -268,7 +270,7 @@ class Engine(Logger):
         except Exception as e:
             self.changeCount +=1
             self.Error(getErrorMmessage())
-            self.Error(f"Erreur non gérée : fin du traitement du fichier audio" )
+            self.Info(f"Erreur non gérée : fin du traitement du fichier audio" )
 		    
 
     def scan(self):
@@ -287,23 +289,23 @@ class Engine(Logger):
         
     def getLastFile(self,directory,filter):
 
-        # get last diff logfile path
+        # récupère le dernier fichier dnas 
         # l'ordre alphabétique des fichiers diff est aussi chronoligque
 
         self.dirname = directory
-        my_files = sorted( os.listdir(self.dirname),reverse=True)
+        files = sorted( os.listdir(self.dirname),reverse=True)
         #ajd=datetime.now().strftime("%Y-%m-%d")
         selected = ""
-        if my_files:
-            for my_file in my_files:
-                matches = re.search(filter,my_file,re.IGNORECASE)
+        if files:
+            for file in files:
+                matches = re.search(filter,file,re.IGNORECASE)
                 if matches:
                     # sélectionne le premmier ok
-                    selected = my_file
-                    self.Detail(f"{my_file} : OK")
+                    selected = file
+                    self.Detail(f"{file} : OK")
                     break
                 else:
-                    self.Verbose("Fichier pas OK "+ my_file)
+                    self.Verbose("Fichier pas OK "+ file)
             return selected
         else:
             self.Error("Le répertoire des logs différentiels Vide")
@@ -327,7 +329,7 @@ def formatToUnixPath(path,isDir=False,reverse = False,removeQuotes = False):
     return newPath
 
 def normalizeName(a) -> str:
-    """ retoune une chaine de caractères uniquement alphanumérique en minuscule et sans accent."""
+    """ retoune une chaine de caractères uniquement alphanumérique en minuscule et sans accent ni espace."""
     return re.sub(r'[\W_]+', '', removeAccents(a.lower()))
 
 def removeAccents(s):
@@ -335,7 +337,7 @@ def removeAccents(s):
                 if unicodedata.category(c) != 'Mn')
 
 def strCompare(a,b) -> int:
-    if a == b:
+    if a == b: 
         return _EQUAL
     if (normalizeName(a) == normalizeName(b)):
         return _SIMILAR
@@ -396,23 +398,19 @@ class TagsModel(list):
         self.fileTags = None
         self.calcTags = {}
         self.hasFile = False
-        
-
-#        if model == _SOURCE:
         self.calcTags = calcTags
-#        else:
-#            self.calcTags = calcTags.copy()
         
 
     def loadSet(self,fullPathname=''):
         self.relpath, filename = splitFilePath(fullPathname)
+        self.calcTags[_RELPATH] = _RELPATH
+        self.calcTags[_FILENAME] = filename
         self.loadPhyTags(fullPathname)
         self.hasFile = True
 
     def loadPhyTags(self,fullPathName):
         try:
             self.fileTags = MP3(fullPathName, ID3=EasyID3)
-            # print(self.tags.valid_keys.keys())
         except:
             self.fileTags = mutagen.File(fullPathName, easy=True)
             self.fileTags.add_tags()
@@ -426,11 +424,7 @@ class TagsModel(list):
             rawTitle = self.fileTags[_TITLE][0]    
             for key in [_LENGTH, _YEAR, _MODEL,_SHORT_MODEL,_TRACK]:
                 find = (r'\s?' + self.getCalcTag(key,makeFilter=True) + r'\s?-?')
-                rawTitle = re.sub(find,'',rawTitle)
-    
-            #rawTitle = re.sub(r'\s?' + self.model + r'\s?-?','',rawTitle)
-            #need to purge old one
-                
+                rawTitle = re.sub(find,'',rawTitle,re.I)
             self.calcTags[_RAW_TITLE] = rawTitle
         return True
 
@@ -507,7 +501,7 @@ class Scanner():
 
 
     def checkArtist(self,artist) -> bool:
-        """ returns if file is  referenced in radio programms txt file"""
+        """ verfie si le nom d'artiste/alias normalisé est bien présente dans la base ()"""
         normName = normalizeName(artist)
 
         if normName in bot.RBProgs:
@@ -536,14 +530,18 @@ class Scanner():
                 artistInfo = self.checkArtist(info[_ARTIST])
                 if artistInfo:
                     normfilename = re.sub(info[_ARTIST],artistInfo['rawartist'], filename.lower())
+                    # normfilename permet de trier les fichiers par ordre chrono-inverse
                     info[_FILENAME] =  filename
                     info[_NORM_FILNAME] =  normfilename
                     info[_RELPATH] =  relpath
-                    info[_LENGTH] =  ""
+                    info[_LENGTH] =  "0"
                     info.update(artistInfo)
                     return info
                 else:
                     bot.Warning(f'{relpath}{filename} : Artiste {info[_ARTIST]} non présent dans la liste des émissions')
+            else:
+                bot.Verbose(f'{relpath}{filename} : Format de nom de fichier insuffisante ou extension invalide, analyse impossible')
+
         else:
             bot.Verbose(f'{relpath}{filename} : Format de nom de fichier incorrect, analyse impossible')
         return False
@@ -633,10 +631,8 @@ class DirScan(Scanner):
     """ Render audio files list from directory scan """
     
     def __init__(self):
-        
         super().__init__([['(^)(.*)']])
         self.directoryName = settings.root[_LOCAL]
-
 
     def readLines(self):
         bot.Info('*****************************************************************')
@@ -752,10 +748,11 @@ class AudioFile:
         return strCompare(self.getTag(key,model,calc=True),self.getTag(key,model))
 
     def checkFilename(self, model):
+        """vérifie si le nom du fichier réel est conforme au schéma du modèle """
         return strCompare(self.getFileName(model,calc=True),self.getFileName(model))   
     
     def saveFilename(self,model):
-        self.renameAudio(_SOURCE,_SOURCE)
+        self.moveAudio(_SOURCE,_SOURCE)
 
     def checkFileTags(self,model):
         return self.checkTags(model,_TITLE)  == _EQUAL
@@ -787,62 +784,62 @@ class AudioFile:
         sourceFile = self.getFullFilePath(modelSource)
         distFile = self.getFullFilePath(modelDestination)
         if not settings.noAction:
-            if modelDestination in _CURRENT_PREVIOUS:
-                try:
-                    cmd = 'copy /Y "' + formatToUnixPath(sourceFile, reverse=True) + '" "' + \
-                        formatToUnixPath(distFile, reverse = True)+ '" 2>&1'
-                    bot.Verbose("Commande : " + cmd)
-                    result = subprocess.call(cmd, shell=True)
-                    if result == 0:
-                        bot.Detail("Copie effectuée")
-                    self.models[modelDestination].loadSet(distFile)
-                    self.models[modelDestination].save(modelDestination)
-                    self.hasChanged = True
-                    bot.Info( f"OK : Copie du fichier {sourceFile}  vers {distFile}")
+            try:
+                cmd = 'copy /Y "' + formatToUnixPath(sourceFile, reverse=True) + '" "' + \
+                    formatToUnixPath(distFile, reverse = True)+ '" 2>&1'
+                bot.Verbose("Commande : " + cmd)
+                result = subprocess.call(cmd, shell=True)
+                if result == 0:
+                    bot.Detail("Copie effectuée")
+                self.models[modelDestination].loadSet(distFile)
+                self.models[modelDestination].save(modelDestination)
+                self.hasChanged = True
+                bot.Info( f"OK : Copie du fichier {sourceFile}  vers {distFile}")
+                
+                if settings.makeDistCopy:
                     sourceFile = self.getFullFilePath(modelDestination)
                     distFile = self.getFullFilePath(modelDestination,_DISTANT)
-                    if settings.makeDistCopy:
-                        shutil.copy2(sourceFile,distFile)
-                        bot.Info( f"OK : Copie du fichier {modelDestination}  de local à distant")
-                except:
-                    raise RBCopyError(sourceFile,distFile)
+                    shutil.copy2(sourceFile,distFile)
+                    bot.Info( f"OK : Copie du fichier {modelDestination}  de local à distant")
+            except:
+                raise RBCopyError(sourceFile,distFile)
 
         else:
                 bot.Info("NoAction : " + message )
     
-    def renameAudio(self,modelSource,modelDestination):
-        """ renomme un fichier d'un modèle vers un autre """
-        message = "Renommage du fichier " + modelSource + " en " + modelDestination
+    def moveAudio(self,modelSource,modelDestination):
+        """ transforme un fichier depuis modèle vers un autre (tags et nom)"""
+        audio = self.getRelativeFilePath(modelSource)
+        message = f"Renommage du fichier {audio} de {modelSource} à {modelDestination}"
         if not settings.noAction:
             try:
-                if modelDestination in _CURRENT_PREVIOUS:
-                    self.models[modelSource].save(model = modelDestination )
-                    os.replace(self.getFullFilePath(modelSource), self.getFullFilePath(modelDestination,calc=True))
-                    self.hasChanged = True
-                    bot.Info( message )
+                sourceFile = self.getFullFilePath(modelSource)
+                destFile = self.getFullFilePath(modelDestination,calc=True)
+                self.models[modelSource].save(model = modelDestination )
+                os.replace(sourceFile, )
+                self.hasChanged = True
+                bot.Info( message )
                 if settings.makeDistCopy:
-                    if modelDestination in _CURRENT_PREVIOUS:
-                        distTags = self.loadModelSets(modelDestination,_DISTANT, calc =self.models[modelDestination].calcTags)
-                        distTags.loadSet(self.getFullFilePath(modelDestination,root=_DISTANT,calc=True))
-                        if distTags:
-                            distTags.save(model = modelDestination)
-
-                    os.replace(self.getFullFilePath(modelSource,_DISTANT), self.getFullFilePath(modelDestination,_DISTANT,calc=True))
-                    shutil.copystat(self.getFullFilePath(modelDestination,_LOCAL),self.getFullFilePath(modelDestination,_DISTANT,calc=True))
+                    sourceFile = self.getFullFilePath(modelSource,_DISTANT)
+                    destFile = self.getFullFilePath(modelDestination,_DISTANT,calc=True)
+                    self.models[modelSource].loadSet(sourceFile)
+                    self.models[modelSource].save(modelDestination)
+                    os.replace(sourceFile, destFile)
+                    shutil.copystat(self.getFullFilePath(modelDestination,_LOCAL),destFile)
             except:
-                bot.Error('Erreur fatale lors de ' + message)
+                raise RBMoveError(sourceFile,destFile)
         else:
             bot.Info("NoAction : " + message )
 
     def manageCP(self):
-        """ gestion des fichiers current et previous - fichiers les plus récent pour chaque emission"""
+        """ gestion des fichiers current et previous - fichiers les 2 plus récents pour chaque emission"""
 
         if self.models[_CURRENT].hasFile:
             state = self.compareModelTag(_SOURCE,_CURRENT)
             if state == _BIGGER:
                 bot.Info('Fichier #current plus ancien')
                 bot.Info('Fichier current remplace #previous')
-                self.renameAudio(_CURRENT,_PREVIOUS)
+                self.moveAudio(_CURRENT,_PREVIOUS)
                 bot.Info('Fichier traité remplace #current')
                 self.copyAudio(_SOURCE,_CURRENT)
             elif state == _SMALLER:
@@ -863,7 +860,7 @@ class AudioFile:
         """ renomme le fchier audio lorsque son nom est incorrect"""
         for root in _ALL_ROOTS:
             if settings.makeDistCopy or root == _LOCAL :
-                self.renameAudio(_SOURCE,_SOURCE)
+                self.moveAudio(_SOURCE,_SOURCE)
  
 
 

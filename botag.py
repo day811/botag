@@ -120,7 +120,7 @@ class Settings(configparser.ConfigParser):
             else:
                 raise Exception(f'Option {attrib} manquante dans la configuration')                   
         self.root={'local' : self.localRoot,'distant' : self.distRoot}
-
+        self.audioSignature += r'\.(' + '|'.join(self.allowedExtensions) + r')$'
         self.logSignature =  self.logMask.lower() + r".+\.log"
 
         #overwrite global for testing mode
@@ -212,7 +212,7 @@ with  bot:
                     break
         else:
             bot.Info('************************************************************')
-            bot.Info("Aucunl fichier audio sélectionné : consulter les logs si ERREUR/WARNING")
+            bot.Info("Aucun fichier audio sélectionné : consulter les logs si ERREUR/WARNING")
             bot.Detail('************************************************************')
         bot.Info()
 
@@ -227,9 +227,9 @@ with  bot:
         print("***********************************************************************")
         print(f"    {bot.countError} ERREUR(S) détectée(s)")
         print(bot.getlevelMessage(0))                
-#        print("***********************************************************************")
+        print("***********************************************************************")
     if settings.logRotation:
-#        bot.Info("Démarrage du nettoyage des fichiers log supérieurs à " + str(settings.logLimit) + " jours")
+        bot.Info("Démarrage du nettoyage des fichiers log supérieurs à " + str(settings.logLimit) + " jours")
         bot.rotate()
 
 
