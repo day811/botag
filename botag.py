@@ -34,7 +34,7 @@ class Settings(configparser.ConfigParser):
         'audioSignature' : {'section' :'AUDIO', 'varType' : 'str','location' : _INI_ONLY} ,
         'logScreenLevel' : {'section' :'LOGS', 'varType' : 'int','location' : _BOTH,'shortCmd' : '-sl', 'default' : 2,'helpTxt' : "Filtre des messages à l'écran - 0:erreur 1:warning 2:info 3:détaillé 4:complet  -1 : rien du tout"} ,
         'logFileLevel' : {'section' :'LOGS', 'varType' : 'int','location' : _BOTH,'shortCmd' : '-fl', 'default' : 3,'helpTxt' : "Filtre des messages log -  0:erreur 1:warning 2:info 3:détaillé 4:complet  -1 : rien du tout"} ,
-        'logPath' : {'section' :'LOGS', 'varType' : 'path','location' : _INI_ONLY} ,
+        'logPath' : {'section' :'LOGS', 'varType' : 'path','location' : _BOTH,'shortCmd' : '-lp', 'default' : 3,'helpTxt' : "Sélectionne le fichier log ou le répertoire contenant les logs"} ,
         'logMask' : {'section' :'LOGS', 'varType' : 'str','location' : _INI_ONLY, 'default' : 'TaggerID3Audio'} ,
         'logRotation' : {'section' :'LOGS', 'varType' : 'bool','location' : _INI_ONLY, 'default' : True} ,
         'logLimit' : {'section' :'LOGS', 'varType' : 'int','location' : _INI_ONLY, 'default' : 30} ,
@@ -54,7 +54,7 @@ class Settings(configparser.ConfigParser):
                 if not field in config: 
                     config[field] = Settings.configsList[field]
             if config['location'] in [_BOTH,_CMD_ONLY]:
-                # configure l'argument de la ligne de commande si attrib autorisé 
+                # configure l'argument de la ligne de commande si attribut est autorisé pour la ligne de commande
                 parser.add_argument(config['shortCmd'], '--' + attrib, default=None,help=config['helpTxt'])            
         try:
             self.args = parser.parse_args()
@@ -144,11 +144,11 @@ def loadRadioPrograms():
 
     ProgDict={}
     try:
-        with open(settings.progFileTxt,'r',-1,"utf-8") as pft:
+        with open(settings.progFileTxt,'r',-1,"utf-8") as scanLines:
             bot.Detail('**************************************************************************')
-            bot.Info("Lecture du fichier des émissions de Radio Ballade : "+  settings.progFileTxt)
+            bot.Info("OK : Lecture du fichier des émissions de Radio Ballade : "+  settings.progFileTxt)
             bot.Detail('**************************************************************************')
-            for line in pft:
+            for line in scanLines:
                 elements = line.split(",")
                 if not line.startswith('#') and len(elements) > 1 :
                     nomProg = elements[0]

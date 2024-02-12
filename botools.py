@@ -19,6 +19,7 @@ _FN_TITLE = 'fntitle'
 _NORM_FILNAME = 'normfilename'
 _TITLE = 'title'
 _MODEL = 'model'
+_SHORT_MODEL = 'shortMod'
 _CURRENT = 'current'
 _PREVIOUS = 'previous'
 _LOCAL = 'local'
@@ -28,10 +29,9 @@ _ID = 'id'
 _FILENAME = 'filename'
 _RELPATH = 'relpath'
 _EXT = 'extension'
-_PHY_MODELS = [_SOURCE,_CURRENT,_PREVIOUS]
+_PHY_MODELS = { _SOURCE : '', _CURRENT : "C#",_PREVIOUS : "P#"}
 _CURRENT_PREVIOUS = [_CURRENT, _PREVIOUS]
 _ALL_ROOTS = [_LOCAL,_DISTANT]
-_CP_FILE = 'cur/prev'
 _SMALLER = 1
 _BIGGER = 2
 _EQUAL = 3
@@ -42,23 +42,19 @@ _ALL_KEYS = {_FILENAME : ['F:',_FILENAME],_ARTIST : ['A:','Artiste'],_YEAR: ['Y:
             _FN_TITLE: ['F','Titre fn'],_MODEL : ['',''],_ID : ['',''],_NORM_FILNAME : None, _EXT : ['Ex','Extension']}
 _READ_FILE_KEYS = [_ARTIST,_YEAR,_TRACK,_TITLE,_LENGTH]
 _SAVE_FILE_KEYS = [_ARTIST,_YEAR,_TRACK,_TITLE]
-_READ_FILENAME_KEYS = [_ARTIST,_YEAR,_TRACK,_FN_TITLE,_EXT,_LENGTH]
+_READ_FILENAME_KEYS = [_ARTIST,_YEAR,_TRACK,_RAW_TITLE,_EXT]
 _TITLE_SUM_KEYS = {
-    _SOURCE : [_LENGTH,_RAW_TITLE],
-    _CURRENT : [_LENGTH,_MODEL,_RAW_TITLE],
-    _PREVIOUS : [_LENGTH,_MODEL,_RAW_TITLE],
+    _SOURCE : [_YEAR,_TRACK,_LENGTH,_RAW_TITLE],
+    _CURRENT : [_SHORT_MODEL,_YEAR,_TRACK,_LENGTH,_RAW_TITLE],
+    _PREVIOUS : [_SHORT_MODEL,_YEAR,_TRACK,_LENGTH,_RAW_TITLE],
     }
 _CALC_FILENAME={
-    _SOURCE : [_ARTIST,_YEAR, _TRACK, _FN_TITLE],
+    _SOURCE : [_ARTIST,_YEAR, _TRACK, _RAW_TITLE],
     _CURRENT : [_ARTIST,_MODEL],
     _PREVIOUS : [_ARTIST,_MODEL]
 }
-_RAW_TITLE_SUM_KEYS = { _SOURCE :[_YEAR,_TRACK,_FN_TITLE],
-    _CURRENT : [_FN_TITLE],
-    _PREVIOUS : [_FN_TITLE]
-}
 _EXCLUDE_FROM_TITLE = ['0000','00','',None]
-_FILE_TITLE_SUM_KEYS = [_LENGTH,_YEAR,_TRACK,_RAW_TITLE]
+_ID_KEYS = [_YEAR,_TRACK,_RAW_TITLE]
 
 def getErrorMmessage():
     exc_type, exc_value, exc_tb = sys.exc_info()
@@ -68,7 +64,7 @@ def getErrorMmessage():
     err_type = type(exc_type).__name__
     err_msg = str(exc_value)
     date = datetime.strftime(datetime.now(), "%B %d, %Y at precisely %I:%M %p")
-    message = f"{err_type} dans {end.filename} / {end.name} en line {end.lineno} with the error message: {err_msg}.\n"
+    message = f"{err_type} dans {end.filename} / {end.name} en line {end.lineno} \nwith the error message: {err_msg}.\n"
     message +=f"Message d'erreur : {err_msg} / Code reponsable: {end.line!r}"
     return message
 
@@ -139,9 +135,14 @@ class Logger():
                 self.logFilename += '_[ATTENTION]'
             self.logFilename +='.log'
             if self.open():
+                self.wrapper.write("\tCréation du fichier log " + self.logFilename+ '\n')
                 for message in self.history:
                     if message[0] <= self.fileLevel:
-                        self.wrapper.write("{:03.0f}".format(message[2]) + f' : {message[1]}' )
+                        self.wrapper.write("{:05.0f}".format(message[2]) + f' : {message[1]}' )
+                if self.countAttention + self.countError >0:
+                    self.wrapper.write("\nLISTES DES ERREURS / ATTENTIONS\n")
+                    self.wrapper.write(self.getlevelMessage(1))
+                    self.wrapper.write(self.getlevelMessage(0))
                 self.history = None
                 self.wrapper.close()
         logFilename = formatToUnixPath(bot.logFilename)
@@ -166,7 +167,7 @@ class Logger():
         self.Info('Logger démarré')
 
     def rotate(self):
-
+        """ erase old files log """
         limitDate = datetime.now() - timedelta(days=settings.logLimit)
         for directory,signature in self.scanList.items():
             self.Detail("Analyse répertoire " + directory)
@@ -186,8 +187,7 @@ class Logger():
                         self.Verbose('Fichier conservé :' + file)
 
     def send(self,message,p_level ):
-        # p_destintion : 0:term 1:logfile 2:both
-
+        """ send message to terminal and/or logfile"""
         if message :
             now = datetime.now().strftime("%H:%M:%S,%f") + " --- "
         else:
@@ -240,8 +240,8 @@ class Engine(Logger):
             self.Info("Emission/artiste présent dans la liste des émissions : " + fileID[_ARTIST] )
                 # need to update tags
             tags = self.audio.models[_SOURCE]
-            self.Detail("Tags calculés à partir du nom du fichier : " + tags.getID(calc=True))
-            self.Detail("Tags enregistrés dans le fichier         : " +  tags.getID())
+            self.Detail("Tags calculés à partir du nom du fichier : " + tags.strID(calc=True))
+            self.Detail("Tags enregistrés dans le fichier         : " +  tags.strID())
             if not self.audio.checkFileTags(_SOURCE):
                 self.Info("Fichier incorrectement taggé - > sauvegarde des tags")
                 self.audio.correctFileTagsInfo(_SOURCE)
@@ -249,27 +249,26 @@ class Engine(Logger):
                 self.Info("Fichier correctement taggé")
             if self.audio.processCP:
                 #les fichiers currents et previous doivent étre gérés
-#                self.audio.loadTagsSets()
                 self.audio.manageCP()
             else:
                 self.Info("Pas de gestion des current/previous pour ce fichier")
-            # vérifie que l'orthographe de l'artiste dans le nom du fichier soit celui par défaut
             if self.audio.checkFilename(_SOURCE) !=  _EQUAL:
-                # fichier incorrrectement nommé
+                # vérifie que l'orthographe de l'artiste dans le nom du fichier soit celui par défaut
                 if settings.autoCorrectFilename:
+                    # fichier incorrrectement nommé
                     self.Info("Fichier incorrectement nommé -> renommage")
                     self.audio.saveFileName()
                 else:
                     self.Warning(f"Fichier {filename} incorrectement nommé mais pas de renommage - voir RBTagger.ini")
 
+            if self.audio.hasChanged:
+                self.changeCount +=1
         except RBException as e:
             self.Error(str(e))        
         except Exception as e:
+            self.changeCount +=1
             self.Error(getErrorMmessage())
             self.Error(f"Erreur non gérée : fin du traitement du fichier audio" )
-        finally:
-            if self.audio.hasChanged:
-                self.changeCount +=1
 		    
 
     def scan(self):
@@ -345,15 +344,8 @@ def strCompare(a,b) -> int:
     else:
         return _SMALLER
 
-def formatLasting(lasting):
-            length = float(lasting)
-            minutes = "{:02d}".format(int(length // 60))
-            seconds = "{:02d}".format(int(round(length % 60)))
-            return '(' + ":".join([minutes, seconds]) + ')'
-
 def splitFilePath(fullPathname):
     global settings
-    
     pathTab = fullPathname.rsplit('/',maxsplit=1)
     path = pathTab[0]+'/'
     filename = pathTab[1]
@@ -365,7 +357,36 @@ def splitFilePath(fullPathname):
     else:
         return None,None
 
-class ModelTags(list):
+def formatLasting(lasting):
+    """ convert time in sec into time mmm:ss """
+    length = float(lasting)
+    minutes = "{:02d}".format(int(length // 60))
+    seconds = "{:02d}".format(int(round(length % 60)))
+    return  ":".join([minutes, seconds]) 
+
+def formatField(func):
+    """ formatte les clés (tag) """
+    def inner(*args, **kwargs):
+        value = func(*args, **kwargs)
+        key = args[1]
+        makeFilter = False
+        if 'makeFilter' in  kwargs:
+            makeFilter = kwargs['makeFilter']
+        if key == _YEAR:
+            return "{:04.0f}".format(int(value))
+        elif key == _TRACK:
+            if value == '': 
+                value = "0"
+            return "{:02.0f}".format(int(value))
+        elif key == _LENGTH:
+            if makeFilter: wrapper = [r'\(',r'\)']
+            else: wrapper = ['(',')']
+            return value.join(wrapper)
+        return value
+    return inner
+    
+
+class TagsModel(list):
     """ Classe permettant d'accéder aux fonctions de mutagen. """
 
     
@@ -377,10 +398,10 @@ class ModelTags(list):
         self.hasFile = False
         
 
-        if model == _SOURCE:
-            self.calcTags = calcTags
-        else:
-            self.calcTags = calcTags.copy()
+#        if model == _SOURCE:
+        self.calcTags = calcTags
+#        else:
+#            self.calcTags = calcTags.copy()
         
 
     def loadSet(self,fullPathname=''):
@@ -398,33 +419,46 @@ class ModelTags(list):
         if self.model == _SOURCE:
             self.calcTags[_LENGTH]= formatLasting(self.fileTags.info.length)
         else:
+            self.calcTags = self.calcTags.copy()
             for key in _READ_FILE_KEYS:
                 self.calcTags[key] = self.getFileTag(key)
-            self.calcTags[_MODEL] = self.model    
-            rt = re.sub(r'\s?\(.+\)\s?-?','',self.fileTags[_TITLE][0])
-            rt = re.sub('|'.join(r'\s?-?' + x + r'-?\s?' for x in _CURRENT_PREVIOUS),'',rt)
-            self.calcTags[_FN_TITLE] = rt
+            self.calcTags[_MODEL] = self.model
+            rawTitle = self.fileTags[_TITLE][0]    
+            for key in [_LENGTH, _YEAR, _MODEL,_SHORT_MODEL,_TRACK]:
+                find = (r'\s?' + self.getCalcTag(key,makeFilter=True) + r'\s?-?')
+                rawTitle = re.sub(find,'',rawTitle)
+    
+            #rawTitle = re.sub(r'\s?' + self.model + r'\s?-?','',rawTitle)
+            #need to purge old one
+                
+            self.calcTags[_RAW_TITLE] = rawTitle
         return True
 
-    def getID(self, calc = False):
+    def strID(self, calc = False):
         if calc:
             return " ".join( _ALL_KEYS[key][0] + self.getCalcTag(key) for key in _READ_FILE_KEYS )    
         else:
             return " ".join( _ALL_KEYS[key][0] + self.getFileTag(key) for key in _READ_FILE_KEYS )    
     
-    def getCalcTag(self,key,model= None):
+    def getCalcID(self):
+        return  "".join( self.getCalcTag(key) for key in _ID_KEYS  )  
+        
+    
+    @formatField
+    def getCalcTag(self,key,model= None,makeFilter = False):
+        """ retourne la valeur calculée et formaté d'une clé de tag"""
         if not model:
             model = self.model
         self.calcTags[_MODEL] = model
+        self.calcTags[_SHORT_MODEL] = _PHY_MODELS[model]
+
         if key == _TITLE:
             return '-'.join( self.getCalcTag(x,model) for x in _TITLE_SUM_KEYS[model] if self.getCalcTag(x,model) not in _EXCLUDE_FROM_TITLE)
-        elif key == _RAW_TITLE:
-            return '-'.join(self.getCalcTag(x,model) for x in  _RAW_TITLE_SUM_KEYS[model] if self.getCalcTag(x,model) not in _EXCLUDE_FROM_TITLE)
         else:
             return self.calcTags[key]
 
     def getFileTag(self,key) -> str:
-        """ retourne les tags enregistrés dans fichier """
+        """ retourne la valeurd'une clé de tag  tags enregistrés dans fichier """
         try:
             if key in [_RELPATH,_FILENAME]:
                        return self.__dict__[key]
@@ -453,7 +487,7 @@ class Scanner():
     def __init__(self,lineFilter):
         
         self.files = []
-        self.audioFilter = settings.audioSignature + r'\.(' + "|" . join(settings.allowedExtensions) + ')'
+        self.audioFilter = settings.audioSignature 
         self.nbLinesFilter = 1
         self.lineFilter = lineFilter
         self.length = 0
@@ -462,7 +496,7 @@ class Scanner():
         
     def __enter__(self):
 
-        self.getFiles()
+        self.readLines()
         if self.files:
             self.files.sort(key = lambda x : x[_NORM_FILNAME],reverse=True)
             return self.files
@@ -471,10 +505,6 @@ class Scanner():
     def __exit__(self, exc_type, exc_value, exc_traceback):
         pass
 
-    def sortFilename(taglist):
-        artist = normalizeName(taglist[0])
-
-        pass
 
     def checkArtist(self,artist) -> bool:
         """ returns if file is  referenced in radio programms txt file"""
@@ -489,36 +519,51 @@ class Scanner():
         else:
             return False
         
+     
     def matchAudio(self,relpath, filename):
+        """ vérife que le nom du fichier audio est correct et vérifie son nom d'artiste/émission"""
         finder = re.compile(self.audioFilter,re.I)
         match = finder.findall(filename)
+        info = {}
         if match:
             res = match[0]
-            if len(res)==5:
-                artist = res[0] 
-                artistInfo = self.checkArtist(artist)
+            captLen = len(res)
+            if captLen == len(_READ_FILENAME_KEYS):
+                for i in range (captLen):
+                    key = _READ_FILENAME_KEYS[i]
+                    info[key] = res[i]
+                
+                artistInfo = self.checkArtist(info[_ARTIST])
                 if artistInfo:
-                    date = "{:04.0f}".format(int(res[1]))
-                    tracknumber = "{:02.0f}".format(int(res[2])) 
-                    title = res[3]
-                    extension = res[4]
-                    normfilename = re.sub(artist,artistInfo['rawartist'], filename.lower())
-                    info = {_YEAR : date, _TRACK : tracknumber, _FN_TITLE : title, _FILENAME : filename,
-                            _NORM_FILNAME : normfilename, _RELPATH : relpath, _EXT : extension,_LENGTH : ''}
+                    normfilename = re.sub(info[_ARTIST],artistInfo['rawartist'], filename.lower())
+                    info[_FILENAME] =  filename
+                    info[_NORM_FILNAME] =  normfilename
+                    info[_RELPATH] =  relpath
+                    info[_LENGTH] =  ""
                     info.update(artistInfo)
                     return info
                 else:
-                    bot.Warning(f'{relpath}{filename} : Artiste {artist} non présent dans la liste des émissions')
+                    bot.Warning(f'{relpath}{filename} : Artiste {info[_ARTIST]} non présent dans la liste des émissions')
         else:
             bot.Verbose(f'{relpath}{filename} : Format de nom de fichier incorrect, analyse impossible')
         return False
 
-    def captureFind(self, find):
-        return  '(' + find[self.currentLine] + ')'
     
+    def extractFileID(self, filepath):
+        """ découpe le chemin du fichier en racine/chemin/fichier et récupère ses infos incluses dans son nom"""
+        relpath,filename = splitFilePath(filepath)
+        if self.hasNotExcludedFilePath(relpath, filename):
+            fileID = self.matchAudio(relpath, filename)
+            if fileID:
+                bot.Info('Fichier OK: ' + relpath + filename )
+                return fileID
+            else:
+                return None
 
+
+    
     def getFileID(self,line):
-
+        """ récupère les fichiers devant être traité dans un fichier log """
         try:
             line = formatToUnixPath(line)
             bot.Verbose("Ligne analysée :" + line)
@@ -531,19 +576,12 @@ class Scanner():
                         break # on sort
             else:
                 match = re.search(self.findRow[self.currentLine],line,re.IGNORECASE)
-        
             if self.currentLine == self.nbLinesFilter-1:
                 if match:    
                     bot.Verbose('Correspondance : ' +match.group(1) )
-                    filepath = match.group(2)
-                    relpath,filename = splitFilePath(filepath)
                     self.nbLinesFilter = 1
                     self.currentLine = 0
-                    if self.hasNotExcludedFilePath(relpath, filename):
-                        fileID = self.matchAudio(relpath, filename)
-                        if fileID:
-                            bot.Info('Fichier OK: ' + relpath + filename )
-                            return fileID
+                    return self.extractFileID(match.group(2))
                 else:
                     bot.Verbose("Pas de correspondance")
                     self.nbLinesFilter = 1
@@ -570,7 +608,7 @@ class FileScan(Scanner):
         self.fullPathName = fullPathName
         super().__init__(settings.syncActionLine)
     
-    def getFiles(self):
+    def readLines(self):
         
         bot.Info('*****************************************************************')
         bot.Info("Fichier log sync séléctionné : " + self.fullPathName)
@@ -592,14 +630,15 @@ class FileScan(Scanner):
                 pass
 
 class DirScan(Scanner):
-
+    """ Render audio files list from directory scan """
+    
     def __init__(self):
         
         super().__init__([['(^)(.*)']])
         self.directoryName = settings.root[_LOCAL]
 
 
-    def getFiles(self):
+    def readLines(self):
         bot.Info('*****************************************************************')
         bot.Info("Répertoire sélectionné : " + self.directoryName)
         bot.Info('Chemin doit contenir : ' + " / ".join(settings.scanPathFilter))
@@ -670,7 +709,7 @@ class AudioFile:
                 self.models[model] = self.loadModelSets(model, root=_LOCAL, calcTags = calcTags)
             
     def loadModelSets(self, model, root=_LOCAL, calcTags = None, fullPathName = None):
-        return ModelTags(model,root,calcTags)
+        return TagsModel(model,root,calcTags)
     
 
     def getFullFilePath(self,model=_SOURCE,root=_LOCAL,calc=False):
@@ -683,8 +722,8 @@ class AudioFile:
         if model == _SOURCE and not calc:
             return  self.filename
         else:
-           return   "#".join(self.getTag(field,model,calc=True) for field in _CALC_FILENAME[model] \
-                        if self.getTag(field,model,calc=True) ) + '.' + self.getTag(_EXT,_SOURCE,calc=True)
+           return   '.' .join(["#".join(self.getTag(field,model,calc=True) for field in _CALC_FILENAME[model] \
+                        if self.getTag(field,model,calc=True) ) , self.getTag(_EXT,_SOURCE,calc=True)])
     
     def getRootDir(self,root=_LOCAL):
             return settings.root[root]
@@ -699,18 +738,15 @@ class AudioFile:
             return  settings.currentPath 
     
     def getTag(self, key,model = _SOURCE,calc = False):
-        
         if calc:
-#            self.tags[_SOURCE].calcTags[_MODEL] = model
             return self.models[model].getCalcTag(key,model)
         else:
             return self.models[model].getFileTag(key)
  
-    def compareModelTag(self,key,modelA,modelB):
-
-        rawTitleA = self.getTag(key, modelA,calc=True)
-        rawTitleB = self.getTag(key, modelB,calc=True)
-        return strCompare(rawTitleA,rawTitleB)
+    def compareModelTag(self,modelA,modelB):
+        IdA = self.models[modelA].getCalcID()
+        IdB = self.models[modelB].getCalcID()
+        return strCompare(IdA,IdB)
     
     def checkTags(self,model,key):
         return strCompare(self.getTag(key,model,calc=True),self.getTag(key,model))
@@ -725,7 +761,7 @@ class AudioFile:
         return self.checkTags(model,_TITLE)  == _EQUAL
 
     def correctFileTagsInfo(self,model):
-
+        """ corrige les tags d'un fichier suivant son modèle"""
         message = "Modification des tags ID3"
         if not settings.noAction:
             try:
@@ -746,11 +782,12 @@ class AudioFile:
             bot.Info(f"NoAction :  {message}")
 
     def copyAudio(self,modelSource,modelDestination):
-        message = "Copie du fichier " + modelSource + " vers " + modelDestination
+        """ copie d'un fichier audio et corrections du nom et des tags en fonction du modèle """
+        message = "Copie du fichier " + modelSource + "\n\tvers " + modelDestination
         sourceFile = self.getFullFilePath(modelSource)
         distFile = self.getFullFilePath(modelDestination)
         if not settings.noAction:
-            if modelDestination in (_CURRENT,_PREVIOUS):
+            if modelDestination in _CURRENT_PREVIOUS:
                 try:
                     cmd = 'copy /Y "' + formatToUnixPath(sourceFile, reverse=True) + '" "' + \
                         formatToUnixPath(distFile, reverse = True)+ '" 2>&1'
@@ -774,18 +811,17 @@ class AudioFile:
                 bot.Info("NoAction : " + message )
     
     def renameAudio(self,modelSource,modelDestination):
-
+        """ renomme un fichier d'un modèle vers un autre """
         message = "Renommage du fichier " + modelSource + " en " + modelDestination
         if not settings.noAction:
             try:
-                if modelDestination in (_CURRENT,_PREVIOUS):
-#                    self.tags[modelSource].keys[_TITLE]  = modelDestination + "-" +self.tags[modelSource].keys[_TITLE] 
+                if modelDestination in _CURRENT_PREVIOUS:
                     self.models[modelSource].save(model = modelDestination )
                     os.replace(self.getFullFilePath(modelSource), self.getFullFilePath(modelDestination,calc=True))
                     self.hasChanged = True
                     bot.Info( message )
                 if settings.makeDistCopy:
-                    if modelDestination in (_CURRENT,_PREVIOUS):
+                    if modelDestination in _CURRENT_PREVIOUS:
                         distTags = self.loadModelSets(modelDestination,_DISTANT, calc =self.models[modelDestination].calcTags)
                         distTags.loadSet(self.getFullFilePath(modelDestination,root=_DISTANT,calc=True))
                         if distTags:
@@ -799,10 +835,10 @@ class AudioFile:
             bot.Info("NoAction : " + message )
 
     def manageCP(self):
-        #spn_current : emplacement court du fichier current local relatif au dossier root 5bYAYUk9vv8Lfn9*
+        """ gestion des fichiers current et previous - fichiers les plus récent pour chaque emission"""
 
         if self.models[_CURRENT].hasFile:
-            state = self.compareModelTag(_RAW_TITLE,_SOURCE,_CURRENT)
+            state = self.compareModelTag(_SOURCE,_CURRENT)
             if state == _BIGGER:
                 bot.Info('Fichier #current plus ancien')
                 bot.Info('Fichier current remplace #previous')
@@ -811,7 +847,7 @@ class AudioFile:
                 self.copyAudio(_SOURCE,_CURRENT)
             elif state == _SMALLER:
                 bot.Info('Fichier #current plus récent')
-                if not self.models[_PREVIOUS].hasFile or self.compareModelTag(_RAW_TITLE,_SOURCE,_PREVIOUS) == _BIGGER:
+                if not self.models[_PREVIOUS].hasFile or self.compareModelTag(_SOURCE,_PREVIOUS) == _BIGGER:
                         bot.Info('Fichier #previous plus ancien ou inexistant')
                         bot.Info('Fichier traité se duplique en #previous')
                         self.copyAudio(_SOURCE,_PREVIOUS)
@@ -824,10 +860,10 @@ class AudioFile:
             self.copyAudio(_SOURCE,_CURRENT)
 
     def saveCorrectFileName(self):
-        for root in (_LOCAL,_DISTANT):
+        """ renomme le fchier audio lorsque son nom est incorrect"""
+        for root in _ALL_ROOTS:
             if settings.makeDistCopy or root == _LOCAL :
-                pass
-            #    self.renameAudio(_SOURCE,_FILENAME)
+                self.renameAudio(_SOURCE,_SOURCE)
  
 
 
