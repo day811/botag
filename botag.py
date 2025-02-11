@@ -8,7 +8,7 @@ import argparse
 _BOTH = 0
 _CMD_ONLY = 1
 _INI_ONLY = 2
-
+_STARS = '************************************************************'
 
 class Settings(configparser.ConfigParser):
 
@@ -42,7 +42,7 @@ class Settings(configparser.ConfigParser):
     def __init__(self):
         super().__init__()
         self.path = re.sub(r'py' , 'ini',__file__, re.IGNORECASE)
-        self.read()
+        self.read_tags()
         self.initArgsParser()
 
     def initArgsParser(self):
@@ -51,65 +51,65 @@ class Settings(configparser.ConfigParser):
             config = Settings.attribsList[attrib]
             for field in list(Settings.configsList.keys()):
                 #initialise les champs manquants
-                if not field in config: 
+                if field not in config: 
                     config[field] = Settings.configsList[field]
             if config['location'] in [_BOTH,_CMD_ONLY]:
                 # configure l'argument de la ligne de commande si attribut est autorisé pour la ligne de commande
                 parser.add_argument(config['shortCmd'], '--' + attrib, default=None,help=config['helpTxt'])            
         try:
             self.args = parser.parse_args()
-        except:
+        except parser.error:
             quit()
         
 
-    def read(self):
-        bot.Info("Chargement fichier de configuration : " + self.path)
+    def read_tags(self):
+        bot.info("Chargement fichier de configuration : " + self.path)
         try :
             super().read(self.path, encoding='utf-8')
-        except:
+        except :
             print("Erreur fatale lors de la lecture du fichier de configuration " + self.path)
             input("Tapez une touche pour terminer ou fermez cette fenêtre")
             exit()
 
-    def unfoldValues(self,values,multi,varType):
-        valuesList = []
+    def unfoldValues(self,values,multi,var_type):
+        values_list = []
         if multi > 0:
             values = values.split(',')
             for value in values:
-                valuesList.append(self.formatOption(value,varType))
-            return valuesList
+                values_list.append(self.formatOption(value,var_type))
+            return values_list
         else:
-            return self.formatOption(values,varType)
+            return self.formatOption(values,var_type)
  
-    def formatOption(self,value,varType):
-        if varType == 'int':
+    def formatOption(self,value,var_type):
+        if var_type == 'int':
             try:
                 value = int(value)
             except:
                 value = None
-        elif varType == 'path':
-            value = formatToUnixPath(value,removeQuotes=True)                
-        elif varType == 'bool':
+        elif var_type == 'path':
+            value = format_to_unixpath(value,remove_quotes=True)                
+        elif var_type == 'bool':
             if value.lower() == 'true': value = True
             elif value.lower() == 'false': value = False
             else : value = None
         return value
 
-    def loadAttribs(self):
+    def load_attribs(self):
         for attrib in  list(self.attribsList.keys()):
             config = Settings.attribsList[attrib]
             if config['location'] in [_BOTH,_CMD_ONLY] and self.args.__dict__[attrib]:
                 values = self.unfoldValues(self.args.__dict__[attrib],config['multi'],config['varType'])
             elif config['location'] in [_BOTH,_INI_ONLY]:
                 if config['multi'] == 2:
-                    linesList = []
+                    lines_list = []
                     for i in range(0,9):
                         line = super().get(config['section'],attrib + str(i),raw=True,fallback=config['default'])
                         if line:
-                            linesList.append(self.unfoldValues(line, config['multi'], config['varType']))
+                            lines_list.append(self.unfoldValues(line, config['multi'], config['varType']))
                         else:
                             break
-                    values = linesList
+                    values = lines_list
                 else:
                         values = super().get(config['section'],attrib,raw=True,fallback=config['default'])   
                         values = self.unfoldValues(values, config['multi'], config['varType'])    
@@ -131,7 +131,7 @@ class Settings(configparser.ConfigParser):
             self.progFileTxt = "C:/Users/yves/Python Sources/RB/source/emissions_radio-ballade.txt"
 
  
-def loadRadioPrograms():
+def load_radioprograms():
 
     # chaque émissions à une ligne dans le fichier
     # ligne : nomprog,currentStauts,Alias1,Alias2....
@@ -142,106 +142,105 @@ def loadRadioPrograms():
     # les noms d'artistes/alias sont normalisés (uniquement alphanum en minuscule et sans accent) pour servir d'index
     # un alias normalisé ne peut remplacer le nom principal normalisé
 
-    ProgDict={}
+    prog_dict={}
     try:
         with open(settings.progFileTxt,'r',-1,"utf-8") as scanLines:
-            bot.Detail('**************************************************************************')
-            bot.Info("OK : Lecture du fichier des émissions de Radio Ballade : "+  settings.progFileTxt)
-            bot.Detail('**************************************************************************')
+            bot.detail(_STARS)
+            bot.info("OK : Lecture du fichier des émissions de Radio Ballade : "+  settings.progFileTxt)
+            bot.detail(_STARS)
             for line in scanLines:
                 elements = line.split(",")
                 if not line.startswith('#') and len(elements) > 1 :
-                    nomProg = elements[0]
-                    currentStatus = int(elements[1])==1 # make boolean from 0/1 values
+                    nom_programme = elements[0]
+                    current_status = int(elements[1])==1 # make boolean from 0/1 values
 
                     # entre le nom en minuscules uniquement alphanum sans accent comme entrée dans le dictionnaire
-                    ProgDict[normalizeName(nomProg)]=(nomProg,currentStatus)
-                    bot.Verbose("Entrée nom/défaut émission RB : " + normalizeName(nomProg) + " => " + nomProg + " , "+ str(currentStatus))
+                    prog_dict[normalize_name(nom_programme)]=(nom_programme,current_status)
+                    bot.verbose("Entrée nom/défaut émission RB : " + normalize_name(nom_programme) + " => " + nom_programme + " , "+ str(current_status))
                     # entre les alias si ils existent
                     for i in range(2,len(elements)):
-                        newIndex = normalizeName(elements[i])
+                        new_index = normalize_name(elements[i])
                         # don't overwrite existing values
-                        if newIndex not in ProgDict:
-                            ProgDict[newIndex]=(nomProg,currentStatus)
-                            bot.Verbose("Entrée      alias émission RB : " + newIndex + " => " + nomProg + " , "+ str(currentStatus))
-            bot.Detail()
-    except:
-        bot.Error("Lecture impossible du fichier des émissions de Radio Ballade : " + settings.progFileTxt )
+                        if new_index not in prog_dict:
+                            prog_dict[new_index]=(nom_programme,current_status)
+                            bot.verbose("Entrée      alias émission RB : " + new_index + " => " + nom_programme + " , "+ str(current_status))
+            bot.detail()
+    except :
+        bot.error("Lecture impossible du fichier des émissions de Radio Ballade : " + settings.progFileTxt )
         input("Tapez une touche pour terminer ou fermez cette fenêtre")
         exit()
         return False
 
     else:
-        return ProgDict
+        return prog_dict
 
 # MAIN PROGRAM
 
 try:
     settings = Settings()
 except Exception as e:
-    print(getErrorMmessage())
+    print(get_error_message())
     quit()
 else:
-    settings.loadAttribs()
+    settings.load_attribs()
 
 with  bot:
     
     
     bot.start(settings)
 
-    bot.Info("Démmarage du taggage synchronisé de Radio Ballade")
+    bot.info("Démmarage du taggage synchronisé de Radio Ballade")
     if settings.noAction:
-        bot.Info("Exécution en mode NoAction : aucun changement effectué")
-    bot.Info()
+        bot.info("Exécution en mode NoAction : aucun changement effectué")
+    bot.info()
 
     # lecture du fichier des émissions RB
-    bot.RBProgs = loadRadioPrograms()
+    bot.RBProgs = load_radioprograms()
     
     with bot.scan() as files:
-        bot.Info()
+        bot.info()
         if files:
-            bot.Info('************************************************************')
-            bot.Info("Traitement des actions pour " + str(len(files)) + " fichier(s)")
-            bot.Detail('************************************************************')
+            bot.info(_STARS)
+            bot.info("Traitement des actions pour " + str(len(files)) + " fichier(s)")
+            bot.detail(_STARS)
             
             for fileID in files:
-                bot.Info()
+                bot.info()
                 bot.manageAudioSet(fileID)
-                if bot.changeCount >= settings.changeLimit and settings.changeLimit > 0:
-                    bot.Info('Le nombre de changements effectués a atteint la limite , relancer pour continuer')
+                if bot.change_count >= settings.changeLimit and settings.changeLimit > 0:
+                    bot.info('Le nombre de changements effectués a atteint la limite , relancer pour continuer')
                     break
         else:
-            bot.Info('************************************************************')
-            bot.Info("Aucun fichier audio sélectionné : consulter les logs si ERREUR/WARNING")
-            bot.Detail('************************************************************')
-        bot.Info()
+            bot.info(_STARS)
+            bot.info("Aucun fichier audio sélectionné : consulter les logs si ERREUR/WARNING")
+            bot.detail(_STARS)
+        bot.info()
 
-    bot.Info("Fin du taggage synchronisé de Radio Ballade")
-    bot.Info()
-    if bot.countAttention > 0 :
-        print("***********************************************************************")
-        print(f"    {bot.countAttention} WARNINGS(S) détecté(s)")
-        print(bot.getlevelMessage(1))                
-#        print("***********************************************************************")
-    if bot.countError > 0 :
-        print("***********************************************************************")
-        print(f"    {bot.countError} ERREUR(S) détectée(s)")
-        print(bot.getlevelMessage(0))                
-        print("***********************************************************************")
+    bot.info("Fin du taggage synchronisé de Radio Ballade")
+    bot.info()
+    if bot.count_attention > 0 :
+        print(_STARS)
+        print(f"    {bot.count_attention} WARNINGS(S) détecté(s)")
+        print(bot.get_levelmessage(1))                
+    if bot.count_error > 0 :
+        print(_STARS)
+        print(f"    {bot.count_error} ERREUR(S) détectée(s)")
+        print(bot.get_levelmessage(0))                
+        print(_STARS)
     if settings.logRotation:
-        bot.Info("Démarrage du nettoyage des fichiers log supérieurs à " + str(settings.logLimit) + " jours")
+        bot.info("Démarrage du nettoyage des fichiers log supérieurs à " + str(settings.logLimit) + " jours")
         bot.rotate()
 
 
 
 print("Fin du traitement. Appuyer sur L pour voir le log complet")
-print('Fichier log :' + bot.logFilename + "\n")
+print('Fichier log :' + bot.log_filename + "\n")
 print("Appuyer sur n'importe quelle touche pour terminer")
 while True:
     key = keyboard.read_key()
     if key.lower() == 'l':
 
-        cmd = 'start "" "'+ bot.logFilename +'"' 
+        cmd = 'start "" "'+ bot.log_filename +'"' 
         os.system(cmd)
     else:
         exit()
