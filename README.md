@@ -18,7 +18,7 @@ Les paramètres sont contenus dans botag.ini mais peuvent être surchargés via 
 
 Pour installer Botag, vous pouvez cloner ce dépôt et installer les dépendances nécessaires :
 
-```bash
+bash
 git clone https://github.com/day811/botag.git
 cd botag
 pip install -r requirements.txt
