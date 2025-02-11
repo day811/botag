@@ -40,7 +40,7 @@ Format de ligne :
 
 ## Liste des paramètres ##
 
-progFileTxt : Chemin vers le fichier des émissions de la Radio .
+progFileTxt : Chemin vers le fichier des émissions de la Radio.
 noAction : Si True, exécute le programme sans effectuer de changements.
 makeDistCopy : Si True, effectue également les modifications sur les fichiers distants.
 autoCorrectFilename : Si True, renomme les fichiers lorsque l'artiste est détecté mais mal orthographié.
