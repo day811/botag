@@ -4,10 +4,12 @@ from typing import Any
 import unicodedata
 import subprocess
 import mutagen
+from mutagen import MutagenError
 from mutagen.easyid3 import EasyID3
 from mutagen.mp3 import MP3
 from datetime import datetime , timedelta
 import re ,  sys, traceback
+from botag import _STARS
 
 settings = None
 _ARTIST = 'artist'
@@ -92,8 +94,8 @@ class RBCopyError(RBException):
         super().__init__(message)
 
 class RBMoveError(RBException):
-    def __init__(self, from_file,to_file) -> None:
-        message = f'lors du déplacement du fichier {from_file} vers {to_file}'
+    def __init__(self, from_file,to_file,e) -> None:
+        message = f'lors du déplacement du fichier {from_file} vers {to_file}\nDétail : {e}'
         super().__init__(message)
 
 class Logger():
@@ -123,14 +125,19 @@ class Logger():
 
         try:
             self.wrapper = open(self.log_filename ,"w",encoding="utf-8")
-        except:
+        except OSError as e :
             print("Création impossible du fichier des logs : " + self.log_filename )
+            print(f"Détail : {e}")
             input("Tapez une touche pour terminer ou fermez cette fenêtre")
             exit()
         else:
             return True        
 
     def close(self):
+        
+        """ Compute some counts and close the logfile
+        """
+        
         if self.history is not None and self.log_filename is not None:
             if self.count_error:
                 self.log_filename += '_[ERREUR]'
@@ -287,7 +294,6 @@ class Engine(Logger):
 
         self.dirname = directory
         files = sorted( os.listdir(self.dirname),reverse=True)
-        #ajd=datetime.now().strftime("%Y-%m-%d")
         selected = ""
         if files:
             for file in files:
@@ -306,10 +312,10 @@ class Engine(Logger):
 
 bot = Engine(1,3)
 
-def format_to_unixpath(path,is_dir=False,reverse = False,remove_quotes = False):
-    path = re.sub('\\n','',path)
+def format_to_unixpath(path:str,is_dir=False,reverse = False,remove_quotes = False):
+    path = path.replace('\n','')
     if remove_quotes:
-        path = re.sub('"|\'','',path)
+        path = path.replace('"|\'','')
         
     from_sep = "\\"
     to_sep = "/"
@@ -317,7 +323,7 @@ def format_to_unixpath(path,is_dir=False,reverse = False,remove_quotes = False):
         from_sep = '/'
         to_sep = r'\\'
     new_path =  path.replace(from_sep,to_sep)
-    if is_dir and new_path[-1:] != to_sep : 
+    if is_dir and not new_path.endswith(to_sep) : 
         new_path += to_sep
     return new_path
 
@@ -404,7 +410,7 @@ class TagsModel(list):
     def loadPhyTags(self,full_pathname):
         try:
             self.fileTags = MP3(full_pathname, ID3=EasyID3)
-        except:
+        except MutagenError:
             self.fileTags = mutagen.File(full_pathname, easy=True)
             self.fileTags.add_tags()
         if self.model == _SOURCE:
@@ -453,7 +459,7 @@ class TagsModel(list):
                 return format_lasting(self.fileTags.info.length)
             else:
                 return self.fileTags[key][0]
-        except:
+        except ValueError:
             self.fileTags[key] = ''
             return ''
  
@@ -583,7 +589,7 @@ class Scanner():
                 # d'autre lignes sont a vérifier
                 self.current_line +=1
                 bot.verbose('Correspondance : ' +match.group(1) + ' --->> Ligne suivante')
-        except :
+        except ValueError:
             bot.warning("La ligne n'a pas pu être correctement analysée, abandon")
             return None
 
@@ -602,9 +608,9 @@ class FileScan(Scanner):
     
     def readLines(self):
         
-        bot.info('*****************************************************************')
-        bot.info("Fichier log sync séléctionné : " + self.fullPathName)
-        bot.info('EXclusion des fichiers/dossiers contenant : ' + " / ".join(settings.excludedPaths))
+        bot.info(_STARS)
+        bot.info(f"Fichier log sync séléctionné : {self.fullPathName}")
+        bot.info(f'Exclusion des fichiers/dossiers contenant : {" / ".join(settings.excludedPaths)}')
         bot.info()
 
         if not os.path.exists(self.fullPathName):
@@ -617,8 +623,8 @@ class FileScan(Scanner):
                         if file_id:    
                             self.files.append(file_id)
                     return True
-            except:
-                bot.error("Problème fatal durant la lecture du fichier " + self.fullPathName)
+            except OSError as e:
+                bot.error(f"Problème fatal durant la lecture du fichier {self.fullPathName}\nDétail : {e}" )
 
 class DirScan(Scanner):
     """ Render audio files list from directory scan """
@@ -628,7 +634,7 @@ class DirScan(Scanner):
         self.directoryName = settings.root[_LOCAL]
 
     def readLines(self):
-        bot.info('*****************************************************************')
+        bot.info(_STARS)
         bot.info("Répertoire sélectionné : " + self.directoryName)
         bot.info('Chemin doit contenir : ' + " / ".join(settings.scanPathFilter))
         bot.info('Artiste doit contenir : ' + " / ".join(settings.scanAudioFilter))
@@ -664,6 +670,14 @@ class DirScan(Scanner):
 class AudioFile:
     
     def __init__(self,file_id):
+        """Initialize the audio file
+
+        Args:
+            file_id (_type_): _description_
+
+        Raises:
+            RBFileNotFound: _description_
+        """
 
         self.models={_SOURCE : None, _CURRENT : None, _PREVIOUS : None}
         self.has_changed = False
@@ -764,7 +778,7 @@ class AudioFile:
                     self.models[model].loadSet(self.get_full_filepath(model,root))
                     self.models[model].save()
                     bot.info("OK distant : " + message)
-            except:
+            except MutagenError :
                 raise RBTagError(model,root)
             else :
                 return True                
@@ -794,7 +808,7 @@ class AudioFile:
                     dist_file = self.get_full_filepath(model_destination,_DISTANT)
                     shutil.copy2(source_file,dist_file)
                     bot.info( f"OK : Copie du fichier {model_destination}  de local à distant")
-            except:
+            except OSError:
                 raise RBCopyError(source_file,dist_file)
 
         else:
@@ -819,8 +833,8 @@ class AudioFile:
                     self.models[model_source].save(model_destination)
                     os.replace(source_file, dest_file)
                     shutil.copystat(self.get_full_filepath(model_destination,_LOCAL),dest_file)
-            except:
-                raise RBMoveError(source_file,dest_file)
+            except OSError as e:
+                raise RBMoveError(source_file,dest_file,e)
         else:
             bot.info("NoAction : " + message )
 

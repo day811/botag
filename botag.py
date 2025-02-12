@@ -1,6 +1,7 @@
 import os
 import re
-from botools import *
+from botools import bot, normalize_name, get_error_message,format_to_unixpath, RBException
+
 import configparser
 import keyboard
 import argparse
@@ -41,7 +42,7 @@ class Settings(configparser.ConfigParser):
     }
     def __init__(self):
         super().__init__()
-        self.path = re.sub(r'py' , 'ini',__file__, re.IGNORECASE)
+        self.path = __file__.lower().replace('py','ini')
         self.read_tags()
         self.initArgsParser()
 
@@ -66,7 +67,7 @@ class Settings(configparser.ConfigParser):
         bot.info("Chargement fichier de configuration : " + self.path)
         try :
             super().read(self.path, encoding='utf-8')
-        except :
+        except configparser.Error:
             print("Erreur fatale lors de la lecture du fichier de configuration " + self.path)
             input("Tapez une touche pour terminer ou fermez cette fenêtre")
             exit()
@@ -85,7 +86,7 @@ class Settings(configparser.ConfigParser):
         if var_type == 'int':
             try:
                 value = int(value)
-            except:
+            except ValueError:
                 value = None
         elif var_type == 'path':
             value = format_to_unixpath(value,remove_quotes=True)                
@@ -95,7 +96,14 @@ class Settings(configparser.ConfigParser):
             else : value = None
         return value
 
+    
+    def load_attrib(self,attrib):
+        # to complete
+        pass
+
+    
     def load_attribs(self):
+
         for attrib in  list(self.attribsList.keys()):
             config = Settings.attribsList[attrib]
             if config['location'] in [_BOTH,_CMD_ONLY] and self.args.__dict__[attrib]:
@@ -118,7 +126,7 @@ class Settings(configparser.ConfigParser):
             if values is not None:
                 setattr(self,attrib, values) 
             else:
-                raise Exception(f'Option {attrib} manquante dans la configuration')                   
+                raise RBException(f'Option {attrib} manquante dans la configuration')                   
         self.root={'local' : self.localRoot,'distant' : self.distRoot}
         self.audioSignature += r'\.(' + '|'.join(self.allowedExtensions) + r')$'
         self.logSignature =  self.logMask.lower() + r".+\.log"
@@ -165,8 +173,9 @@ def load_radioprograms():
                             prog_dict[new_index]=(nom_programme,current_status)
                             bot.verbose("Entrée      alias émission RB : " + new_index + " => " + nom_programme + " , "+ str(current_status))
             bot.detail()
-    except :
-        bot.error("Lecture impossible du fichier des émissions de Radio Ballade : " + settings.progFileTxt )
+    except OSError as e:
+        bot.error(f"Lecture impossible du fichier des émissions de Radio Ballade : {settings.progFileTxt}"   )
+        bot.error(f"Détail : {e}"   )
         input("Tapez une touche pour terminer ou fermez cette fenêtre")
         exit()
         return False
