@@ -1,6 +1,6 @@
 import os
 import re
-from botools import bot, normalize_name, get_error_message,format_to_unixpath, RBException
+from botools import bot, normalize_name, get_error_message, format_to_unixpath, RBException
 
 import configparser
 import keyboard
@@ -22,12 +22,12 @@ SET_INT = 'int'
 
 class Setting():
 
-    def __init__(self,section,vartype,location,shortcmd='',default=None,multi=0,helptxt=''):
+    def __init__(self, section, vartype, location, shortcmd='', default=None, multi=0, helptxt=''):
         """Class des paramètres
 
         Args:
             section (str): nom de la section dans le fichier ini
-            vartype (str): type de paramètres : String, path, integer,boolean
+            vartype (str): type de paramètres : String, path, integer, boolean
             location (int): visibilité du paramètres : fichier ini, ligne de commande ou les deux
             shortcmd (str, optional): nom de l'option raccourcie en ligne de commande. Defaults to ''.
             default (variant, optional): valeur par défaut du paramètre. Defaults to None.
@@ -46,7 +46,7 @@ class Setting():
 
 class Settings(configparser.ConfigParser):
 
-    attribsList=dict[str,Setting] = {
+    params=dict[str,Setting] = {
         'progFileTxt' :  Setting(GENERAL, SET_PATH, INI_ONLY),
         'noAction' : Setting(GENERAL, SET_BOOL, BOTH, shortcmd='-na', default=True, 
                 helptxt= "(True/False) : si True, exécute le programme sans effectuer aucun changement"),
@@ -89,17 +89,17 @@ class Settings(configparser.ConfigParser):
 
     def __init__(self):
         super().__init__()
-        self.path = __file__.lower().replace('py','ini')
+        self.path = __file__.lower().replace('py', 'ini')
         self.read_tags()
         self.initArgsParser()
 
     def initArgsParser(self):
         parser = argparse.ArgumentParser()
-        for attrib in  list(self.attribsList.keys()):
-            setting = Settings.attribsList[attrib]
-            if setting.location in [BOTH,CMD_ONLY]:
+        for attrib in  list(self.params.keys()):
+            setting = Settings.params[attrib]
+            if setting.location in [BOTH, CMD_ONLY]:
                 # configure l'argument de la ligne de commande si attribut est autorisé pour la ligne de commande
-                parser.add_argument(setting['shortCmd'], '--' + attrib, default=None,help=setting['helpTxt'])            
+                parser.add_argument(setting.shortcmd, '--' + attrib, default=None, help=setting.helptxt)            
         try:
             self.args = parser.parse_args()
         except parser.error:
@@ -115,7 +115,7 @@ class Settings(configparser.ConfigParser):
             input("Tapez une touche pour terminer ou fermez cette fenêtre")
             exit()
 
-    def unfoldValues(self,values,multi,var_type):
+    def unfoldValues(self, values, multi, var_type):
 
         """ Return formatted strings or list of formatted string from coma separated string  
 
@@ -132,19 +132,19 @@ class Settings(configparser.ConfigParser):
         if multi > 0:
             values = values.split(',')
             for value in values:
-                values_list.append(self.formatOption(value,var_type))
+                values_list.append(self.formatOption(value, var_type))
             return values_list
         else:
-            return self.formatOption(values,var_type)
+            return self.formatOption(values, var_type)
  
-    def formatOption(self,value,var_type):
+    def formatOption(self, value, var_type):
         if var_type == 'int':
             try:
                 value = int(value)
             except ValueError:
                 value = None
         elif var_type == 'path':
-            value = format_to_unixpath(value,remove_quotes=True)                
+            value = format_to_unixpath(value, remove_quotes=True)                
         elif var_type == 'bool':
             if value.lower() == 'true': value = True
             elif value.lower() == 'false': value = False
@@ -152,37 +152,39 @@ class Settings(configparser.ConfigParser):
         return value
 
     
-    def load_attrib(self,attrib):
-        # to complete
-        pass
+    def load_multi(self, attrib, setting : Setting):
+        if setting.multi == 2:
+            lines_list = []
+            for i in range(0, 9):
+                line = super().get(setting.section, attrib + str(i), raw=True, fallback=setting.default)
+                if line:
+                    lines_list.append(self.unfoldValues(line,  setting.multi, setting.varType))
+                else:
+                    break
+            values = lines_list
+        else:
+            values = super().get(setting.section, attrib, raw=True, fallback=setting.default)   
+            values = self.unfoldValues(values, setting.multi, setting.varType)    
+        return values
 
     
     def load_attribs(self):
 
-        for attrib in  list(self.attribsList.keys()):
-            setting = Settings.attribsList[attrib]
-            if setting.location in [BOTH,CMD_ONLY] and self.args.__dict__[attrib]:
+        for attrib in  list(self.params.keys()):
+            setting = Settings.params[attrib]
+            if setting.location in [BOTH, CMD_ONLY] and self.args.__dict__[attrib]:
+                # if cli parameters is present and allowed in CLI mode
                 values = self.unfoldValues(self.args.__dict__[attrib], setting.multi, setting.varType)
-            elif setting.location in [BOTH,INI_ONLY]:
-                if setting.multi == 2:
-                    lines_list = []
-                    for i in range(0,9):
-                        line = super().get(setting.section,attrib + str(i),raw=True,fallback=setting.default)
-                        if line:
-                            lines_list.append(self.unfoldValues(line,  setting.multi,  setting.varType))
-                        else:
-                            break
-                    values = lines_list
-                else:
-                        values = super().get(setting.section,attrib,raw=True,fallback=setting.default)   
-                        values = self.unfoldValues(values, setting.multi, setting.varType)    
+            elif setting.location in [BOTH, INI_ONLY]:
+                # load possibly multiline
+                values = self.load_multi(attrib, setting)
             else:
                 values = None     
             if values is not None:
-                setattr(self,attrib, values) 
+                setattr(self, attrib, values) 
             else:
                 raise RBException(f'Option {attrib} manquante dans la configuration')                   
-        self.root={'local' : self.localRoot,'distant' : self.distRoot}
+        self.root={'local' : self.localRoot, 'distant' : self.distRoot}
         self.audioSignature += r'\.(' + '|'.join(self.allowedExtensions) + r')$'
         self.logSignature =  self.logMask.lower() + r".+\.log"
 
@@ -197,7 +199,7 @@ class Settings(configparser.ConfigParser):
 def load_radioprograms():
 
     # chaque émissions à une ligne dans le fichier
-    # ligne : nomprog,currentStauts,Alias1,Alias2....
+    # ligne : nomprog, currentStauts, Alias1, Alias2....
     #   nomProg : nom de l'émission
     #   currentStatus : génération fichier current/previous (0: non   1: Oui)
     #   un ou plusieurs alias
@@ -207,7 +209,7 @@ def load_radioprograms():
 
     prog_dict={}
     try:
-        with open(settings.progFileTxt,'r',-1,"utf-8") as scanLines:
+        with open(settings.progFileTxt, 'r', -1, "utf-8") as scanLines:
             bot.detail(STARS)
             bot.info("OK : Lecture du fichier des émissions de Radio Ballade : "+  settings.progFileTxt)
             bot.detail(STARS)
@@ -218,14 +220,14 @@ def load_radioprograms():
                     current_status = int(elements[1])==1 # make boolean from 0/1 values
 
                     # entre le nom en minuscules uniquement alphanum sans accent comme entrée dans le dictionnaire
-                    prog_dict[normalize_name(nom_programme)]=(nom_programme,current_status)
+                    prog_dict[normalize_name(nom_programme)]=(nom_programme, current_status)
                     bot.verbose("Entrée nom/défaut émission RB : " + normalize_name(nom_programme) + " => " + nom_programme + " , "+ str(current_status))
                     # entre les alias si ils existent
-                    for i in range(2,len(elements)):
+                    for i in range(2, len(elements)):
                         new_index = normalize_name(elements[i])
                         # don't overwrite existing values
                         if new_index not in prog_dict:
-                            prog_dict[new_index]=(nom_programme,current_status)
+                            prog_dict[new_index]=(nom_programme, current_status)
                             bot.verbose("Entrée      alias émission RB : " + new_index + " => " + nom_programme + " , "+ str(current_status))
             bot.detail()
     except OSError as e:
