@@ -1,6 +1,6 @@
 import os
 import re
-from botools import bot, normalize_name, get_error_message, format_to_unixpath, RBException, STARS
+from botools import Engine, normalize_name, get_error_message, format_to_unixpath, RBException, STARS
 
 import configparser
 import keyboard
@@ -19,19 +19,19 @@ SET_PATH = 'path'
 SET_BOOL = 'bool'
 SET_INT = 'int'
 
+
 class Setting():
 
     def __init__(self, section, vartype, location, shortcmd='', default=None, multi=0, helptxt=''):
         """Class des paramètres
-
         Args:
             section (str): nom de la section dans le fichier ini
             vartype (str): type de paramètres : String, path, integer, boolean
             location (int): visibilité du paramètres : fichier ini, ligne de commande ou les deux
-            shortcmd (str, optional): nom de l'option raccourcie en ligne de commande. Defaults to ''.
-            default (variant, optional): valeur par défaut du paramètre. Defaults to None.
+            shortcmd (str, optional): nom de l'option raccourcie en ligne de commande. Defaut : ''.
+            default (variant, optional): valeur par défaut du paramètre. Defaut None.
             multi (int, optional): si 1 la valeur est une liste, si 2 le paramètre est sur plusieurs lignes param[0-9]. Defaults to 0.
-            helptxt (str, optional): texte d'aide pour la ligne de commande. Defaults to ''.
+            helptxt (str, optional): texte d'aide pour la ligne de commande. Defaut ''.
         """
         self.section = section
         self.vartype = vartype
@@ -40,7 +40,6 @@ class Setting():
         self.default = default
         self.multi = multi
         self.helptxt = helptxt
-
         
 
 class Settings(configparser.ConfigParser):
@@ -85,11 +84,10 @@ class Settings(configparser.ConfigParser):
         'logLimit' : Setting(LOGS, SET_INT, INI_ONLY, default=30),
     }
     
-
     def __init__(self):
         super().__init__()
         self.path = __file__.lower().replace('py', 'ini')
-        self.read_tags()
+        self.read_ini()
         self.initArgsParser()
 
     def initArgsParser(self):
@@ -103,9 +101,8 @@ class Settings(configparser.ConfigParser):
             self.args = parser.parse_args()
         except parser.error:
             quit()
-        
 
-    def read_tags(self):
+    def read_ini(self):
         bot.info("Chargement fichier de configuration : " + self.path)
         try :
             super().read(self.path, encoding='utf-8')
@@ -115,16 +112,15 @@ class Settings(configparser.ConfigParser):
             exit()
 
     def unfoldValues(self, values, multi, var_type):
-
         """ Return formatted strings or list of formatted string from coma separated string  
 
         Args:
-            values (_type_): Given String
-            multi (_type_): list if yes, string if no
-            var_type (_type_): format to apply
+            values (str): Given String with coma separated datas
+            multi (int): list if true/1, string if no/0
+            var_type (str): format to apply
 
         Returns:
-            _type_: list or str
+            value: list or str
         """
 
         values_list = []
@@ -149,8 +145,7 @@ class Settings(configparser.ConfigParser):
             elif value.lower() == 'false': value = False
             else : value = None
         return value
-
-    
+   
     def load_multi(self, attrib, setting : Setting):
         if setting.multi == 2:
             lines_list = []
@@ -165,7 +160,6 @@ class Settings(configparser.ConfigParser):
             values = super().get(setting.section, attrib, raw=True, fallback=setting.default)   
             values = self.unfoldValues(values, setting.multi, setting.varType)    
         return values
-
     
     def load_attribs(self):
 
@@ -210,7 +204,7 @@ def load_radioprograms():
     try:
         with open(settings.progFileTxt, 'r', -1, "utf-8") as scanLines:
             bot.detail(STARS)
-            bot.info("OK : Lecture du fichier des émissions de Radio Ballade : "+  settings.progFileTxt)
+            bot.info(f"OK : Lecture du fichier des émissions de Radio Ballade : {settings.progFileTxt}")
             bot.detail(STARS)
             for line in scanLines:
                 elements = line.split(",")
@@ -220,18 +214,18 @@ def load_radioprograms():
 
                     # entre le nom en minuscules uniquement alphanum sans accent comme entrée dans le dictionnaire
                     prog_dict[normalize_name(nom_programme)]=(nom_programme, current_status)
-                    bot.verbose(f"Entrée nom/défaut émission RB : {normalize_name(nom_programme)} => {nom_programme}, {str(current_status)}" )
+                    bot.verbose(f"Entrée nom/défaut émission RB : {normalize_name(nom_programme)} => {nom_programme}, {str(current_status)}")
                     # entre les alias si ils existent
                     for i in range(2, len(elements)):
                         new_index = normalize_name(elements[i])
                         # don't overwrite existing values
                         if new_index not in prog_dict:
-                            prog_dict[new_index]=(nom_programme, current_status)
+                            prog_dict[new_index] = (nom_programme, current_status)
                             bot.verbose(f"Entrée      alias émission RB : {normalize_name(nom_programme)} => {nom_programme}, {str(current_status)}")
             bot.detail()
     except OSError as e:
-        bot.error(f"Lecture impossible du fichier des émissions de Radio Ballade : {settings.progFileTxt}"   )
-        bot.error(f"Détail : {e}"   )
+        bot.error(f"Lecture impossible du fichier des émissions de Radio Ballade : {settings.progFileTxt}")
+        bot.error(f"Détail : {e}")
         input("Tapez une touche pour terminer ou fermez cette fenêtre")
         exit()
         return False
@@ -242,8 +236,9 @@ def load_radioprograms():
 # MAIN PROGRAM
 
 try:
+    bot = Engine(1, 3)
     settings = Settings()
-except Exception as e:
+except RBException as e:
     print(get_error_message())
     quit()
 else:
@@ -251,9 +246,7 @@ else:
 
 with  bot:
     
-    
     bot.start(settings)
-
     bot.info("Démmarage du taggage synchronisé de Radio Ballade")
     if settings.noAction:
         bot.info("Exécution en mode NoAction : aucun changement effectué")
@@ -296,15 +289,12 @@ with  bot:
         bot.info(f"Démarrage du nettoyage des fichiers log supérieurs à {str(settings.logLimit)} jours")
         bot.rotate()
 
-
-
 print("Fin du traitement. Appuyer sur L pour voir le log complet")
 print(f'Fichier log : {bot.log_filename}\n')
 print("Appuyer sur n'importe quelle touche pour terminer")
 while True:
     key = keyboard.read_key()
     if key.lower() == 'l':
-
         cmd = 'start "" "'+ bot.log_filename +'"' 
         os.system(cmd)
     else:

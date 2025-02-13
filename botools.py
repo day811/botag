@@ -9,6 +9,9 @@ from mutagen.easyid3 import EasyID3
 from mutagen.mp3 import MP3
 from datetime import datetime , timedelta
 import re ,  sys, traceback
+from botag import bot
+
+# CONSTANTS
 
 settings = None
 STARS = '************************************************************'
@@ -57,6 +60,8 @@ CALC_FILENAME={
 EXCLUDE_FROM_TITLE = ['0000', '00', '', None]
 ID_KEYS = [YEAR, TRACK, RAW_TITLE]
 
+# FUNCTIONS
+
 def get_error_message():
     exc_type, exc_value, exc_tb = sys.exc_info()
     stack_summary = traceback.extract_tb(exc_tb)
@@ -68,6 +73,82 @@ def get_error_message():
     message += f"Message d'erreur : {err_msg} / Code reponsable: {end.line!r}"
     return message
 
+def format_to_unixpath(path: str, is_dir=False, reverse = False, remove_quotes = False):
+    path = path.replace('\n','')
+    if remove_quotes:
+        path = path.replace('"|\'','')
+        
+    from_sep = "\\"
+    to_sep = "/"
+    if reverse:
+        from_sep = '/'
+        to_sep = r'\\'
+    new_path =  path.replace(from_sep, to_sep)
+    if is_dir and not new_path.endswith(to_sep) : 
+        new_path += to_sep
+    return new_path
+
+def normalize_name(a) -> str:
+    """ retoune une chaine de caractères uniquement alphanumérique en minuscule et sans accent ni espace."""
+    return re.sub(r'[\W_]+', '', remove_accents(a.lower()))
+
+def remove_accents(s):
+    return ''.join(c for c in unicodedata.normalize('NFD', s)
+                if unicodedata.category(c) != 'Mn')
+
+def str_compare(a, b) -> int:
+    if a == b: 
+        return EQUAL
+    if (normalize_name(a) == normalize_name(b)):
+        return SIMILAR
+    if a > b:
+        return BIGGER
+    else:
+        return SMALLER
+
+def split_filepath(full_pathname):
+    global settings
+    path_tab = full_pathname.rsplit('/', maxsplit=1)
+    path = path_tab[0]+'/'
+    filename = path_tab[1]
+    find = '(' + '|'.join(settings.root[x] for x in settings.root)+ r')(.*)'
+    match = re.search(find, path, re.I)
+    if match:
+        relpath = match.group(2)
+        return relpath, filename
+    else:
+        return None, None
+
+def format_lasting(lasting):
+    """ convert time in sec into time mmm:ss """
+    length = float(lasting)
+    minutes = "{:02d}".format(int(length // 60))
+    seconds = "{:02d}".format(int(round(length % 60)))
+    return  ":".join([minutes, seconds]) 
+
+def format_field(func):
+    """ formatte les clés (tag) """
+    def inner(*args, **kwargs):
+        value = func(*args, **kwargs)
+        key = args[1]
+        make_filter = False
+        if 'makeFilter' in  kwargs:
+            make_filter = kwargs['makeFilter']
+        if key == YEAR:
+            return "{:04.0f}".format(int(value))
+        elif key == TRACK:
+            if value == '': 
+                value = "0"
+            return "{:02.0f}".format(int(value))
+        elif key == LENGTH:
+            if make_filter: wrapper = [r'\(', r'\)']
+            else: wrapper = ['(',')']
+            return value.join(wrapper)
+        return value
+    return inner
+
+# ExceptionS
+    
 class RBException(Exception):
     def __init__(self, message) -> None:
         super().__init__(message)
@@ -98,6 +179,8 @@ class RBMoveError(RBException):
         message = f'lors du déplacement du fichier {from_file} vers {to_file}\nDétail : {e}'
         super().__init__(message)
 
+# Classes
+
 class Logger():
     
     def __init__(self, screen_level, file_level) -> None:
@@ -118,7 +201,6 @@ class Logger():
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
         self.close()
-    
         return False
     
     def open(self):
@@ -133,7 +215,6 @@ class Logger():
         else:
             return True        
 
-    
     def write_logs(self):
 
         self.wrapper.write("\tCréation du fichier log " + self.log_filename+ '\n')
@@ -236,6 +317,7 @@ class Logger():
     def verbose(self, message=""):
         self.send(message, 4)
 
+
 class Engine(Logger):
 
     def __init__(self, screen_level, file_level) -> None:
@@ -320,82 +402,6 @@ class Engine(Logger):
             self.error("Le répertoire des logs différentiels Vide")
             return None
 
-bot = Engine(1, 3)
-
-def format_to_unixpath(path: str, is_dir=False, reverse = False, remove_quotes = False):
-    path = path.replace('\n','')
-    if remove_quotes:
-        path = path.replace('"|\'','')
-        
-    from_sep = "\\"
-    to_sep = "/"
-    if reverse:
-        from_sep = '/'
-        to_sep = r'\\'
-    new_path =  path.replace(from_sep, to_sep)
-    if is_dir and not new_path.endswith(to_sep) : 
-        new_path += to_sep
-    return new_path
-
-def normalize_name(a) -> str:
-    """ retoune une chaine de caractères uniquement alphanumérique en minuscule et sans accent ni espace."""
-    return re.sub(r'[\W_]+', '', remove_accents(a.lower()))
-
-def remove_accents(s):
-    return ''.join(c for c in unicodedata.normalize('NFD', s)
-                if unicodedata.category(c) != 'Mn')
-
-def str_compare(a, b) -> int:
-    if a == b: 
-        return EQUAL
-    if (normalize_name(a) == normalize_name(b)):
-        return SIMILAR
-    if a > b:
-        return BIGGER
-    else:
-        return SMALLER
-
-def split_filepath(full_pathname):
-    global settings
-    path_tab = full_pathname.rsplit('/', maxsplit=1)
-    path = path_tab[0]+'/'
-    filename = path_tab[1]
-    find = '(' + '|'.join(settings.root[x] for x in settings.root)+ r')(.*)'
-    match = re.search(find, path, re.I)
-    if match:
-        relpath = match.group(2)
-        return relpath, filename
-    else:
-        return None, None
-
-def format_lasting(lasting):
-    """ convert time in sec into time mmm:ss """
-    length = float(lasting)
-    minutes = "{:02d}".format(int(length // 60))
-    seconds = "{:02d}".format(int(round(length % 60)))
-    return  ":".join([minutes, seconds]) 
-
-def format_field(func):
-    """ formatte les clés (tag) """
-    def inner(*args, **kwargs):
-        value = func(*args, **kwargs)
-        key = args[1]
-        make_filter = False
-        if 'makeFilter' in  kwargs:
-            make_filter = kwargs['makeFilter']
-        if key == YEAR:
-            return "{:04.0f}".format(int(value))
-        elif key == TRACK:
-            if value == '': 
-                value = "0"
-            return "{:02.0f}".format(int(value))
-        elif key == LENGTH:
-            if make_filter: wrapper = [r'\(', r'\)']
-            else: wrapper = ['(',')']
-            return value.join(wrapper)
-        return value
-    return inner
-    
 
 class TagsModel(list):
     """ Classe permettant d'accéder aux fonctions de mutagen. """
@@ -483,6 +489,7 @@ class TagsModel(list):
         for key in SAVE_FILE_KEYS :
                 self.fileTags[key] = self.getCalcTag(key, model) 
         self.fileTags.save()
+
 
 class Scanner():
 
@@ -610,6 +617,7 @@ class Scanner():
                 return False
         return True
     
+
 class FileScan(Scanner):
 
     """
@@ -640,6 +648,7 @@ class FileScan(Scanner):
                     return True
             except OSError as e:
                 bot.error(f"Problème fatal durant la lecture du fichier {self.fullPathName}\nDétail : {e}" )
+
 
 class DirScan(Scanner):
     
@@ -686,6 +695,7 @@ class DirScan(Scanner):
              
         return True
     
+
 class AudioFile:
     
     def __init__(self, file_id):
