@@ -35,7 +35,7 @@ pip install -r requirements.txt
 ## Liste des émissions ##
 Un fichier doit contenir les émissions devant être traitées, ses possibles alias(émisions renommées) et le traitement automatique éventuel du dernier enregistrement
 Format de ligne : 
-**nomprog,currentStauts,Alias1,Alias2...**
+**nomprog,currentStatus,Alias1,Alias2...**
 
 
 ## Liste des paramètres ##
