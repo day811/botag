@@ -26,11 +26,11 @@ pip install -r requirements.txt
 ## Utilisation ##
 
 > python botag.py  
-  -> lance le programme avec les paramètres du fichier botag.ini
+  -> lance le programme avec les paramètres du fichier botag.ini  
 > python botag.py --noaction True   
-  -> lance le programme avec les paramètres du fichier botag.ini mais n'effectue pas de mise à jour
+  -> lance le programme avec les paramètres du fichier botag.ini mais n'effectue pas de mise à jour  
 > python botag.py --scanDirectory True --scanAudioFilter 'emissionA' --scanPathFilter 'janvier'  
-  ->lance le programme en sélectionnant les répertoires contenant 'janvier' et les nom d'émission 'emissionA'
+  ->lance le programme en sélectionnant les répertoires contenant 'janvier' et les nom d'émission 'emissionA'  
 
 ## Liste des émissions ##
 Un fichier doit contenir les émissions devant être traitées, ses possibles alias(émisions renommées) et le traitement automatique éventuel du dernier enregistrement
