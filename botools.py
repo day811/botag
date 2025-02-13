@@ -602,6 +602,11 @@ class Scanner():
     
 class FileScan(Scanner):
 
+    """
+        Return audio files list from filetext content
+
+    """
+
     def __init__(self,full_pathname):
         self.fullPathName = full_pathname
         super().__init__(settings.syncActionLine)
@@ -627,7 +632,11 @@ class FileScan(Scanner):
                 bot.error(f"Problème fatal durant la lecture du fichier {self.fullPathName}\nDétail : {e}" )
 
 class DirScan(Scanner):
-    """ Render audio files list from directory scan """
+    
+    """
+        Return audio files list from directory files list.
+
+    """
     
     def __init__(self):
         super().__init__([['(^)(.*)']])
@@ -670,6 +679,7 @@ class DirScan(Scanner):
 class AudioFile:
     
     def __init__(self,file_id):
+        
         """Initialize the audio file
 
         Args:
