@@ -1,6 +1,6 @@
 import os
 import re
-from botools import Engine, normalize_name, get_error_message, format_to_unixpath, RBException, STARS
+from botools import Engine, normalize_name, get_error_message, format_to_unixpath, BTException, STARS
 import configparser
 import keyboard
 import argparse
@@ -90,6 +90,8 @@ class Settings(configparser.ConfigParser):
         self.initArgsParser()
 
     def initArgsParser(self):
+        """ Initializes cli command parameters""" 
+
         parser = argparse.ArgumentParser()
         for attrib in  list(self.params.keys()):
             setting = Settings.params[attrib]
@@ -176,7 +178,7 @@ class Settings(configparser.ConfigParser):
             if values is not None:
                 setattr(self, attrib, values) 
             else:
-                raise RBException(f'Option {attrib} manquante dans la configuration')                   
+                raise BTException(f'Option {attrib} manquante dans la configuration')                   
         self.root={'local' : self.localRoot, 'distant' : self.distRoot}
         self.audioSignature += r'\.(' + '|'.join(self.allowedExtensions) + r')$'
         self.logSignature =  self.logMask.lower() + r".+\.log"
@@ -221,10 +223,10 @@ def load_radioprograms():
                         # don't overwrite existing values
                         if new_index not in prog_dict:
                             prog_dict[new_index] = (nom_programme, current_status)
-                            bot.verbose(f"Entrée      alias émission RB : {normalize_name(nom_programme)} => {nom_programme}, {str(current_status)}")
+                            bot.verbose(f"Entrée      alias émission  : {normalize_name(nom_programme)} => {nom_programme}, {str(current_status)}")
             bot.detail()
     except OSError as e:
-        bot.error(f"Lecture impossible du fichier des émissions de Radio Ballade : {settings.progFileTxt}")
+        bot.error(f"Lecture impossible du fichier des émissions radio : {settings.progFileTxt}")
         bot.error(f"Détail : {e}")
         input("Tapez une touche pour terminer ou fermez cette fenêtre")
         exit()
@@ -238,7 +240,7 @@ def load_radioprograms():
 try:
     bot = Engine(1, 3)
     settings = Settings()
-except RBException as e:
+except BTException as e:
     print(get_error_message())
     quit()
 else:

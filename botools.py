@@ -149,32 +149,32 @@ def format_field(func):
 
 # ExceptionS
     
-class RBException(Exception):
+class BTException(Exception):
     def __init__(self, message) -> None:
         super().__init__(message)
 
-class RBFileNotFound(RBException):
+class BTFileNotFound(BTException):
     def __init__(self, filepath) -> None:
         message = f'Fichier audio {filepath} inexistant'
         super().__init__(message)
 
-class RBArtistNotFound(RBException):
+class BTArtistNotFound(BTException):
     def __init__(self, artist) -> None:
         message = f"L'artiste : {artist} n'existe pas"
         super().__init__(message)
 
-class RBTagError(RBException):
+class BTTagError(BTException):
     def __init__(self, model, root) -> None:
         filename = bot.audio.get_full_filepath(model, root)
         message = f'lors de l\'écriture des tags dans {filename}'
         super().__init__(message)
 
-class RBCopyError(RBException):
+class BTCopyError(BTException):
     def __init__(self, from_file, to_file) -> None:
         message = f'lors de la copie du fichier {from_file} vers {to_file}'
         super().__init__(message)
 
-class RBMoveError(RBException):
+class BTMoveError(BTException):
     def __init__(self, from_file, to_file, e) -> None:
         message = f'lors du déplacement du fichier {from_file} vers {to_file}\nDétail : {e}'
         super().__init__(message)
@@ -357,7 +357,7 @@ class Engine(Logger):
 
             if self.audio.has_changed:
                 self.change_count += 1
-        except RBException as e:
+        except BTException as e:
             self.error(str(e))        
         except Exception as e:
             self.change_count += 1
@@ -724,7 +724,7 @@ class AudioFile:
         for root in settings.root:
             path = self.get_full_filepath(root=root)
             if (root != DISTANT or settings.makeDistCopy) and not os.path.exists(path):
-                raise RBFileNotFound(path)
+                raise BTFileNotFound(path)
 
     def load_modelstags(self, root=LOCAL):
         for model in PHY_MODELS : # 
@@ -809,7 +809,7 @@ class AudioFile:
                     self.models[model].save()
                     bot.info("OK distant : " + message)
             except MutagenError :
-                raise RBTagError(model, root)
+                raise BTTagError(model, root)
             else :
                 return True                
         else:
@@ -839,7 +839,7 @@ class AudioFile:
                     shutil.copy2(source_file, dist_file)
                     bot.info(f"OK : Copie du fichier {model_destination}  de local à distant")
             except OSError:
-                raise RBCopyError(source_file, dist_file)
+                raise BTCopyError(source_file, dist_file)
 
         else:
                 bot.info("NoAction : " + message )
@@ -864,7 +864,7 @@ class AudioFile:
                     os.replace(source_file, dest_file)
                     shutil.copystat(self.get_full_filepath(model_destination, LOCAL), dest_file)
             except OSError as e:
-                raise RBMoveError(source_file, dest_file, e)
+                raise BTMoveError(source_file, dest_file, e)
         else:
             bot.info("NoAction : {message}")
 
