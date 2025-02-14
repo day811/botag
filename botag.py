@@ -1,7 +1,6 @@
 import os
 import re
 from botools import Engine, normalize_name, get_error_message, format_to_unixpath, RBException, STARS
-
 import configparser
 import keyboard
 import argparse
@@ -57,9 +56,9 @@ class Settings(configparser.ConfigParser):
                 helptxt="(True/False) si True, exécution en mode test, l'emplacement des différents chemins est modifié"),
         'changeLimit' : Setting(GENERAL, SET_INT,BOTH, shortcmd='-cl', default=0, 
                 helptxt="Limite ne nombre de fichiers audio pouvant être modifié, 0=aucune limite"),
-        'syncPath' : Setting(SCANFILE, SET_PATH,BOTH, shortcmd='-sp', default=0, 
+        'syncPath' : Setting(SCANFILE, SET_PATH,BOTH, shortcmd='-sp', default='', 
                 helptxt="Emplacement du fichier ou du répertoire contenant les logs à analyser"),
-        'syncSignature' : Setting(SCANFILE, SET_PATH, BOTH, shortcmd='-sp', default=0, 
+        'syncSignature' : Setting(SCANFILE, SET_PATH, BOTH, shortcmd='-sp', default='', 
                 helptxt="Expression régulière signature permettant d'identifier les fichiers log"),
         'syncActionLine' : Setting(SCANFILE, SET_PATH, INI_ONLY, multi=2),
         'scanDirectory' : Setting(SCANDIR, SET_BOOL, BOTH, shortcmd='-sd', default=True, 
@@ -133,17 +132,18 @@ class Settings(configparser.ConfigParser):
             return self.formatOption(values, var_type)
  
     def formatOption(self, value, var_type):
-        if var_type == 'int':
-            try:
-                value = int(value)
-            except ValueError:
-                value = None
-        elif var_type == 'path':
-            value = format_to_unixpath(value, remove_quotes=True)                
-        elif var_type == 'bool':
-            if value.lower() == 'true': value = True
-            elif value.lower() == 'false': value = False
-            else : value = None
+        match var_type:
+            case 'int':
+                try:
+                    value = int(value)
+                except ValueError:
+                    value = None
+            case 'path':
+                value = format_to_unixpath(value, remove_quotes=True)                
+            case 'bool':
+                if value.lower() == 'true': value = True
+                elif value.lower() == 'false': value = False
+                else : value = None
         return value
    
     def load_multi(self, attrib, setting : Setting):
@@ -186,7 +186,7 @@ class Settings(configparser.ConfigParser):
             self.logPath = "C:/Users/yves/Python Sources/RB/Logs/"
             self.syncPath = "C:/Users/yves/Python Sources/RB/Diff/"
             self.root = {'local' : "C:/Users/yves/Python Sources/RB/SyncA/", 'distant' : "C:/Users/yves/Python Sources/RB/SyncB/"}
-            self.progFileTxt = "C:/Users/yves/Python Sources/RB/source/emissions_radio-ballade.txt"
+            self.progFileTxt = "C:/Users/yves/Python Sources/RB/source/emissions_radio.txt"
 
  
 def load_radioprograms():
